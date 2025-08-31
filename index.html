@@ -169,6 +169,52 @@
 
   <!-- Tiny floating status bar -->
   <div id="statusBar" aria-live="polite" aria-atomic="true" class="hidden">Ready.</div>
+<script>
+// Minimal login: asks once, remembers in localStorage, adds Authorization to all fetches.
+(function () {
+  const KEY = "hvacAuthB64";
+
+  async function ensureLogin() {
+    let b64 = localStorage.getItem(KEY);
+    if (b64) {
+      if (await probe(b64)) return b64;
+      localStorage.removeItem(KEY);
+    }
+    while (true) {
+      const user = prompt("Username:");
+      if (user == null) throw new Error("Login cancelled");
+      const pass = prompt("Password:");
+      if (pass == null) throw new Error("Login cancelled");
+
+      b64 = btoa(`${user}:${pass}`);
+      if (await probe(b64)) {
+        localStorage.setItem(KEY, b64);
+        return b64;
+      }
+      alert("Invalid username/password. Try again.");
+    }
+  }
+
+  async function probe(b64) {
+    try {
+      const res = await fetch("/.netlify/functions/ping", {
+        headers: { Authorization: "Basic " + b64 }
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  const origFetch = window.fetch.bind(window);
+  window.fetch = async function (input, init = {}) {
+    const b64 = await ensureLogin();
+    init.headers = new Headers(init.headers || {});
+    if (!init.headers.has("Authorization")) {
+      init.headers.set("Authorization", "Basic " + b64);
+    }
+    return origFetch(input, init);
+  };
+})();
+</script>
 
 <script>
 /* =========================
