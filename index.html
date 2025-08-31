@@ -642,4 +642,36 @@
 </div>
 
 </body>
+  <script>
+async function attemptLogin() {
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value.trim();
+  const msg = document.getElementById('login-msg');
+  msg.textContent = '';
+
+  const res = await fetch('/.netlify/functions/login', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    // store session in localStorage
+    localStorage.setItem('hvacUser', username);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+  } else {
+    msg.textContent = 'Invalid username or password';
+  }
+}
+
+// Auto-login if already in localStorage
+window.addEventListener('load', () => {
+  if (localStorage.getItem('hvacUser')) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+  }
+});
+</script>
+
 </html>
