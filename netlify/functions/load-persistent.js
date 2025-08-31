@@ -12,7 +12,6 @@ exports.handler = async () => {
     }
     const json = await store.get('v1', { type:'json' });
     const data = (json && json.data && typeof json.data === 'object') ? json.data : (json || {});
-    const authErr = checkAuth(event);
 if (authErr) return authErr;
 
     return j(200, { ok:true, data });
