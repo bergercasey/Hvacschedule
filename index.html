@@ -84,98 +84,236 @@
   }
   #statusBar.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
   @media print { #statusBar{ display:none !important; } }
+
+  /* ===== Auth wrapper ===== */
+  #appShell { display:none; }
+  #authBar {
+    position: absolute; top: 8px; right: 12px; font-size: 13px; color:#333;
+  }
+  #authBar a { color:#0b62ff; text-decoration:none; cursor:pointer; }
+  #authGate {
+    position: fixed; inset:0; background:#f7f7f8; display:flex; align-items:center; justify-content:center;
+    z-index: 2000; padding: 20px;
+  }
+  .auth-card {
+    width: min(92vw, 360px); background:#fff; border:1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 12px 36px rgba(0,0,0,.08);
+    padding: 18px;
+  }
+  .auth-card h2 { margin: 4px 0 12px; font-size: 18px; text-align:center; }
+  .auth-card label { display:block; font-size:13px; margin:10px 0 4px; }
+  .auth-card input[type="text"], .auth-card input[type="password"] {
+    width:100%; padding:10px; font-size:15px; border:1px solid #d1d5db; border-radius:6px;
+  }
+  .auth-actions { display:flex; align-items:center; justify-content:space-between; margin-top:14px; }
+  .auth-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
+  .auth-error { color:#b00020; font-size:13px; margin-top:10px; min-height: 18px; }
 </style>
 </head>
 <body>
 
-  <h1>HVAC Weekly Schedule</h1>
-
-  <div class="button-row">
-    <button id="calendarBtn">📅</button>
-    <button id="prevWeekBtn">Previous Week</button>
-    <button id="todayBtn">Today</button>
-    <button id="nextWeekBtn">Next Week</button>
-    <button id="ptoBtn">PTO Calendar</button>
-    <button id="notesToggle">Hide Notes</button>
-    <button id="printBtn">Print</button>
+  <!-- Top-right signed-in bar -->
+  <div id="authBar" style="display:none;">
+    <span id="authUser"></span> · <a id="authLogout">Log out</a>
   </div>
 
-  <div class="weekday-header" id="weekdayHeader"></div>
-  <div class="grid" id="week-grid"></div>
-  <div id="calendarContainer" class="calendar-popup" style="display:none;"></div>
-
-  <!-- PTO Calendar Panel -->
-  <div id="ptoPanel" aria-hidden="true">
-    <div id="ptoPanelHeader">
-      <div><strong>PTO Calendar</strong> <span id="ptoHint" style="font-size:12px;color:#666;"></span></div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button id="ptoOpenInNew" title="Open in new tab">Open ↗</button>
-        <button id="ptoClose">Close</button>
-      </div>
-    </div>
-    <iframe id="ptoFrame" src="about:blank" loading="lazy"></iframe>
-    <div id="ptoPanelFooter">
-      Tip: view the PTO calendar, then tick the red/blue PTO boxes in the grid for who’s out.
+  <!-- Login Gate -->
+  <div id="authGate" aria-modal="true" role="dialog" style="display:flex;">
+    <div class="auth-card">
+      <h2>Sign in to Schedule</h2>
+      <form id="authForm">
+        <label for="authUserField">Username</label>
+        <input id="authUserField" name="username" type="text" autocomplete="username" required />
+        <label for="authPassField">Password</label>
+        <input id="authPassField" name="password" type="password" autocomplete="current-password" required />
+        <div class="auth-actions">
+          <label style="font-size:12px;"><input type="checkbox" id="authRemember" /> Remember me</label>
+          <button type="submit">Sign in</button>
+        </div>
+        <div class="auth-error" id="authError"></div>
+      </form>
     </div>
   </div>
 
-  <!-- Notes: Floaters + To-Do -->
-  <div id="bottomSection" data-persistent="1">
-    <div id="floatersSection">
-      <h3 style="text-align:center;margin:4px 0;">Floaters</h3>
-      <div style="display:flex; flex-direction:column; gap:4px;">
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 1"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 2"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 3"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 4"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 5"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 6"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 7"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 8"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 9"></div>
-        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 10"></div>
+  <!-- App shell (hidden until auth OK) -->
+  <div id="appShell" aria-hidden="true">
+
+    <h1>HVAC Weekly Schedule</h1>
+
+    <div class="button-row">
+      <button id="calendarBtn">📅</button>
+      <button id="prevWeekBtn">Previous Week</button>
+      <button id="todayBtn">Today</button>
+      <button id="nextWeekBtn">Next Week</button>
+      <button id="ptoBtn">PTO Calendar</button>
+      <button id="notesToggle">Hide Notes</button>
+      <button id="printBtn">Print</button>
+    </div>
+
+    <div class="weekday-header" id="weekdayHeader"></div>
+    <div class="grid" id="week-grid"></div>
+    <div id="calendarContainer" class="calendar-popup" style="display:none;"></div>
+
+    <!-- PTO Calendar Panel -->
+    <div id="ptoPanel" aria-hidden="true">
+      <div id="ptoPanelHeader">
+        <div><strong>PTO Calendar</strong> <span id="ptoHint" style="font-size:12px;color:#666;"></span></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button id="ptoOpenInNew" title="Open in new tab">Open ↗</button>
+          <button id="ptoClose">Close</button>
+        </div>
+      </div>
+      <iframe id="ptoFrame" src="about:blank" loading="lazy"></iframe>
+      <div id="ptoPanelFooter">
+        Tip: view the PTO calendar, then tick the red/blue PTO boxes in the grid for who’s out.
+      </div>
+    </div>
+
+    <!-- Notes: Floaters + To-Do -->
+    <div id="bottomSection" data-persistent="1">
+      <div id="floatersSection">
+        <h3 style="text-align:center;margin:4px 0;">Floaters</h3>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 1"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 2"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 3"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 4"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 5"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 6"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 7"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 8"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 9"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 10"></div>
+        </div>
+
+        <!-- PTO Calendar Embed URL (saved persistently) -->
+        <div style="margin-top:10px; border-top:1px solid #eee; padding-top:8px;">
+          <label for="ptoUrl" style="font-size:13px;display:block;margin-bottom:4px;">
+            PTO Calendar Embed URL (Google or Outlook)
+          </label>
+          <input id="ptoUrl" type="url" placeholder="https://calendar.google.com/calendar/embed?..." style="width:100%; padding:6px; font-size:14px;">
+          <div style="font-size:12px;color:#555;margin-top:4px;">
+            Paste the read-only embed link for your PTO calendar. Click “PTO Calendar” above to view it in-app.
+          </div>
+        </div>
       </div>
 
-      <!-- PTO Calendar Embed URL (saved persistently) -->
-      <div style="margin-top:10px; border-top:1px solid #eee; padding-top:8px;">
-        <label for="ptoUrl" style="font-size:13px;display:block;margin-bottom:4px;">
-          PTO Calendar Embed URL (Google or Outlook)
-        </label>
-        <input id="ptoUrl" type="url" placeholder="https://calendar.google.com/calendar/embed?..." style="width:100%; padding:6px; font-size:14px;">
-        <div style="font-size:12px;color:#555;margin-top:4px;">
-          Paste the read-only embed link for your PTO calendar. Click “PTO Calendar” above to view it in-app.
+      <div id="todoSection">
+        <h3 style="text-align:center;margin:4px 0;">Need to be done jobs</h3>
+        <div class="grid2">
+          <input type="text" class="todo-job" placeholder="Job 1">
+          <input type="text" class="todo-job" placeholder="Job 2">
+          <input type="text" class="todo-job" placeholder="Job 3">
+          <input type="text" class="todo-job" placeholder="Job 4">
+          <input type="text" class="todo-job" placeholder="Job 5">
+          <input type="text" class="todo-job" placeholder="Job 6">
+          <input type="text" class="todo-job" placeholder="Job 7">
+          <input type="text" class="todo-job" placeholder="Job 8">
+          <input type="text" class="todo-job" placeholder="Job 9">
+          <input type="text" class="todo-job" placeholder="Job 10">
+          <input type="text" class="todo-job" placeholder="Job 11">
+          <input type="text" class="todo-job" placeholder="Job 12">
         </div>
       </div>
     </div>
 
-    <div id="todoSection">
-      <h3 style="text-align:center;margin:4px 0;">Need to be done jobs</h3>
-      <div class="grid2">
-        <input type="text" class="todo-job" placeholder="Job 1">
-        <input type="text" class="todo-job" placeholder="Job 2">
-        <input type="text" class="todo-job" placeholder="Job 3">
-        <input type="text" class="todo-job" placeholder="Job 4">
-        <input type="text" class="todo-job" placeholder="Job 5">
-        <input type="text" class="todo-job" placeholder="Job 6">
-        <input type="text" class="todo-job" placeholder="Job 7">
-        <input type="text" class="todo-job" placeholder="Job 8">
-        <input type="text" class="todo-job" placeholder="Job 9">
-        <input type="text" class="todo-job" placeholder="Job 10">
-        <input type="text" class="todo-job" placeholder="Job 11">
-        <input type="text" class="todo-job" placeholder="Job 12">
-      </div>
-    </div>
+    <!-- Tiny floating status bar -->
+    <div id="statusBar" aria-live="polite" aria-atomic="true" class="hidden">Ready.</div>
   </div>
 
-  <!-- Tiny floating status bar -->
-  <div id="statusBar" aria-live="polite" aria-atomic="true" class="hidden">Ready.</div>
 <script>
+/* =========================
+   AUTH ENDPOINTS (Netlify Functions)
+   - /.netlify/functions/auth-me
+   - /.netlify/functions/login      { username, password }
+   - /.netlify/functions/logout
+   ========================= */
+const Auth = (() => {
+  async function me(){
+    try{
+      const r = await fetch('/.netlify/functions/auth-me', { credentials:'include' });
+      if (!r.ok) return { ok:false };
+      const j = await r.json().catch(()=> ({}));
+      return j && j.ok ? j : { ok:false };
+    }catch{ return { ok:false }; }
+  }
+  async function login(username, password, remember){
+    const r = await fetch('/.netlify/functions/login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body: JSON.stringify({ username, password, remember: !!remember })
+    });
+    const j = await r.json().catch(()=> ({}));
+    return j && j.ok ? j : { ok:false, error: j && j.error || 'Login failed' };
+  }
+  async function logout(){
+    try{ await fetch('/.netlify/functions/logout', { method:'POST', credentials:'include' }); }catch{}
+    return { ok:true };
+  }
+  return { me, login, logout };
+})();
 
 /* =========================
-   HVAC — controller (11 CREWS + NOTES VISIBLE + LAST ROW LEAD ONLY + PTO CALENDAR EMBED)
+   LOGIN GATE
    ========================= */
+(async function authGate(){
+  const gate   = document.getElementById('authGate');
+  const app    = document.getElementById('appShell');
+  const aBar   = document.getElementById('authBar');
+  const aUser  = document.getElementById('authUser');
+  const aLogout= document.getElementById('authLogout');
+  const form   = document.getElementById('authForm');
+  const errEl  = document.getElementById('authError');
 
-(function(){
+  function showError(msg){ errEl.textContent = msg || 'Invalid username or password.'; }
+  function clearError(){ errEl.textContent = ''; }
+
+  // Try existing session
+  const session = await Auth.me();
+  if (session.ok){
+    aUser.textContent = `Signed in as ${session.user?.username || 'user'}`;
+    aBar.style.display = 'block';
+    gate.style.display = 'none';
+    app.style.display  = 'block';
+    app.removeAttribute('aria-hidden');
+    document.body.style.paddingTop = '28px'; // space for auth bar
+    appMain(); // ← run the real app now
+    // wire logout
+    aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
+    return;
+  }
+
+  // No session → show login form
+  gate.style.display = 'flex';
+  app.style.display  = 'none';
+  aBar.style.display = 'none';
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    clearError();
+    const username = document.getElementById('authUserField').value.trim();
+    const password = document.getElementById('authPassField').value;
+    const remember = document.getElementById('authRemember').checked;
+    if (!username || !password){ return showError('Enter username and password.'); }
+    const res = await Auth.login(username, password, remember);
+    if (!res.ok){ return showError(res.error || 'Login failed.'); }
+
+    // Success → reveal app
+    aUser.textContent = `Signed in as ${res.user?.username || username}`;
+    aBar.style.display = 'block';
+    gate.style.display = 'none';
+    app.style.display  = 'block';
+    app.removeAttribute('aria-hidden');
+    document.body.style.paddingTop = '28px';
+    aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
+    appMain(); // ← run the real app now
+  }, { passive:false });
+})();
+
+/* =========================
+   HVAC — controller (UNCHANGED, just wrapped in appMain())
+   ========================= */
+function appMain(){
   /* ---------------- Tiny status helper (auto-fade) ---------------- */
   const statusEl = document.getElementById('statusBar');
   const ts = () => new Date().toLocaleTimeString();
@@ -185,7 +323,6 @@
     if (!statusEl) return;
     statusEl.textContent = text;
     statusEl.classList.remove('hidden');
-    // flash background briefly
     statusEl.style.background = 'rgba(228,248,228,.95)';
     setTimeout(()=>{ statusEl.style.background = 'rgba(250,250,250,.95)'; }, 150);
     clearTimeout(fadeTimer);
@@ -270,7 +407,6 @@
       crew.setAttribute('data-persistent','1');
 
       if (row === ROWS - 1) {
-        // LAST ROW: Lead only (no Apprentice box)
         crew.innerHTML = `<input type="text" class="lead-input" placeholder="Lead">`;
       } else {
         crew.innerHTML = `
@@ -400,7 +536,7 @@
 
   /* ---------------- Netlify Endpoints ---------------- */
   async function apiLoadWeek(key){
-    const r = await fetch(`/.netlify/functions/load-week?weekKey=${encodeURIComponent(key)}`);
+    const r = await fetch(`/.netlify/functions/load-week?weekKey=${encodeURIComponent(key)}`, { credentials:'include' });
     const j = await r.json().catch(()=> ({}));
     addLog('load-week', {status:r.status, ok:r.ok, key});
     return (r.ok && j && j.ok) ? (j.data||{}) : {};
@@ -408,6 +544,7 @@
   async function apiSaveWeek(key, data){
     const r = await fetch('/.netlify/functions/save-week', {
       method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'include',
       body: JSON.stringify({ weekKey:key, data })
     });
     const t = await r.text().catch(()=> ''); addLog('save-week', {status:r.status, ok:r.ok, body:t.slice(0,140)});
@@ -416,6 +553,7 @@
     try{
       const r = await fetch('/.netlify/functions/save-persistent', {
         method:'POST', headers:{'Content-Type':'application/json'},
+        credentials:'include',
         body: JSON.stringify({ data })
       });
       addLog('save-persistent', {status:r.status, ok:r.ok});
@@ -423,7 +561,7 @@
   }
   async function apiLoadPersistent(){
     try{
-      const r = await fetch('/.netlify/functions/load-persistent');
+      const r = await fetch('/.netlify/functions/load-persistent', { credentials:'include' });
       const j = await r.json().catch(()=> ({}));
       if (j && j.ok) applyPersistent(j.data||{});
       addLog('load-persistent', {status:r.status, ok:r.ok});
@@ -592,7 +730,8 @@
     }
   }
   function attachCopyHandlers(){
-    grid.addEventListener('pointerdown', (e)=>{
+    const gridEl = grid;
+    gridEl.addEventListener('pointerdown', (e)=>{
       const t = e.target;
       if (!(t.classList.contains('job-input') || t.classList.contains('helper-input'))) return;
       const now = Date.now();
@@ -603,10 +742,10 @@
       }
       lastPointerDown = now;
     }, {passive:false});
-    grid.addEventListener('pointermove', (e)=>{ if (copyActive) pasteAtPoint(e.clientX, e.clientY); }, {passive:true});
+    gridEl.addEventListener('pointermove', (e)=>{ if (copyActive) pasteAtPoint(e.clientX, e.clientY); }, {passive:true});
     const endAll = ()=> { if (copyActive) endCopyMode(); };
-    grid.addEventListener('pointerup', endAll, {passive:true});
-    grid.addEventListener('pointercancel', endAll, {passive:true});
+    gridEl.addEventListener('pointerup', endAll, {passive:true});
+    gridEl.addEventListener('pointercancel', endAll, {passive:true});
     window.addEventListener('blur', endAll);
     window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') endCopyMode(); });
   }
@@ -627,51 +766,8 @@
     apiLoadPersistent(); // loads PTOEmbedURL too
     showStatus('Ready.');
   })();
-
-})();
+}
 </script>
-<div id="login-screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;">
-  <h2>HVAC Schedule Login</h2>
-  <input id="login-user" placeholder="Username" style="margin:5px;padding:5px;">
-  <input id="login-pass" type="password" placeholder="Password" style="margin:5px;padding:5px;">
-  <button onclick="attemptLogin()" style="padding:5px 10px;">Login</button>
-  <div id="login-msg" style="color:red;margin-top:8px;"></div>
-</div>
-<div id="app" style="display:none;">
-  <!-- your schedule grid and everything else already in index.html -->
-</div>
 
 </body>
-  <script>
-async function attemptLogin() {
-  const username = document.getElementById('login-user').value.trim();
-  const password = document.getElementById('login-pass').value.trim();
-  const msg = document.getElementById('login-msg');
-  msg.textContent = '';
-
-  const res = await fetch('/.netlify/functions/login', {
-    method: 'POST',
-    headers: { 'Content-Type':'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  const data = await res.json();
-  if (data.ok) {
-    // store session in localStorage
-    localStorage.setItem('hvacUser', username);
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-  } else {
-    msg.textContent = 'Invalid username or password';
-  }
-}
-
-// Auto-login if already in localStorage
-window.addEventListener('load', () => {
-  if (localStorage.getItem('hvacUser')) {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-  }
-});
-</script>
-
 </html>
