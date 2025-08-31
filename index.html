@@ -107,6 +107,28 @@
   .auth-actions { display:flex; align-items:center; justify-content:space-between; margin-top:14px; }
   .auth-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
   .auth-error { color:#b00020; font-size:13px; margin-top:10px; min-height: 18px; }
+
+  /* ===== Send Update modal ===== */
+  #sendModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: none; align-items: center; justify-content: center; z-index: 1500;
+  }
+  #sendModal .card {
+    width: min(92vw, 520px);
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.18);
+    padding: 14px;
+  }
+  #sendModal h3 { margin: 4px 0 10px; font-size: 18px; }
+  .rec-list { display: grid; grid-template-columns: 1fr; gap: 6px; max-height: 240px; overflow:auto; border:1px solid #eee; padding:8px; border-radius:6px; }
+  .rec-item { display:flex; align-items:center; gap:8px; font-size:14px; }
+  .rec-item small { color:#666; }
+  .rec-add { display:flex; gap:6px; margin-top:8px; }
+  .rec-add input { flex:1; padding:8px; font-size:14px; }
+  .send-actions { display:flex; justify-content:space-between; align-items:center; margin-top:12px; }
+  .send-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
+  .send-note { width:100%; min-height:64px; font-size:14px; padding:8px; }
+  @media print { #sendModal { display: none !important; } }
 </style>
 </head>
 <body>
@@ -146,6 +168,7 @@
       <button id="nextWeekBtn">Next Week</button>
       <button id="ptoBtn">PTO Calendar</button>
       <button id="notesToggle">Hide Notes</button>
+      <button id="sendUpdateBtn">Send Update</button>
       <button id="printBtn">Print</button>
     </div>
 
@@ -220,6 +243,45 @@
     <div id="statusBar" aria-live="polite" aria-atomic="true" class="hidden">Ready.</div>
   </div>
 
+  <!-- Send Update modal -->
+  <div id="sendModal" aria-hidden="true">
+    <div class="card" role="dialog" aria-modal="true">
+      <h3>Send Update</h3>
+
+      <div style="font-size:13px; color:#555; margin-bottom:6px;">
+        Choose who should get an email about changes for the currently displayed week.
+      </div>
+
+      <div class="rec-list" id="recList"></div>
+
+      <div class="rec-add">
+        <input id="recName" type="text" placeholder="Name (optional)" />
+        <input id="recEmail" type="email" placeholder="email@example.com" />
+        <button id="recAddBtn">Add</button>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label style="font-size:13px; display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="rememberRecipients" checked />
+          Remember this selection as default next time
+        </label>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label style="font-size:13px;">Optional note to include in email:</label>
+        <textarea id="sendNote" class="send-note" placeholder="e.g., Moved Crew 3 to Main St on Wed; added helper PTO."></textarea>
+      </div>
+
+      <div class="send-actions">
+        <button id="sendCancelBtn">Cancel</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span id="sendBusy" style="font-size:12px; color:#666; display:none;">Sending…</span>
+          <button id="sendNowBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
 /* =========================
    AUTH ENDPOINTS (Netlify Functions)
@@ -276,9 +338,8 @@ const Auth = (() => {
     gate.style.display = 'none';
     app.style.display  = 'block';
     app.removeAttribute('aria-hidden');
-    document.body.style.paddingTop = '28px'; // space for auth bar
+    document.body.style.paddingTop = '28px';
     appMain(); // ← run the real app now
-    // wire logout
     aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
     return;
   }
@@ -298,7 +359,6 @@ const Auth = (() => {
     const res = await Auth.login(username, password, remember);
     if (!res.ok){ return showError(res.error || 'Login failed.'); }
 
-    // Success → reveal app
     aUser.textContent = `Signed in as ${res.user?.username || username}`;
     aBar.style.display = 'block';
     gate.style.display = 'none';
@@ -311,7 +371,7 @@ const Auth = (() => {
 })();
 
 /* =========================
-   HVAC — controller (UNCHANGED, just wrapped in appMain())
+   HVAC — controller (wrapped in appMain())
    ========================= */
 function appMain(){
   /* ---------------- Tiny status helper (auto-fade) ---------------- */
@@ -497,7 +557,9 @@ function appMain(){
     });
   }
 
-  /* ---------------- Persistent ---------------- */
+  /* ---------------- Persistent (UPDATED to store recipients) ---------------- */
+  let notifyRecipients = []; // [{name,email,enabled}]
+
   function collectPersistent(){
     const out={};
     grid.querySelectorAll('.lead-input').forEach((el,i)=> out[`Lead:${pad2(i+1)}`]=el.value||'');
@@ -509,6 +571,8 @@ function appMain(){
     const ptoUrl = document.getElementById('ptoUrl')?.value?.trim() || '';
     out['PTOEmbedURL'] = ptoUrl;
 
+    // Saved recipients for Send Update
+    out['NotifyRecipients'] = notifyRecipients;
     return out;
   }
   function applyPersistent(data){
@@ -524,13 +588,22 @@ function appMain(){
     put('.floater-name','Floater',document);
     put('.todo-job','Todo',document);
 
-    // PTO calendar embed URL
-    if (data && typeof data.PTOEmbedURL === 'string') {
+    // PTO URL
+    if (typeof data?.PTOEmbedURL === 'string') {
       const url = data.PTOEmbedURL;
       const input = document.getElementById('ptoUrl');
       if (input) input.value = url;
       cachePTOUrl = url; // seed cache
       updatePTOHint(url);
+    }
+
+    // Saved recipients
+    if (Array.isArray(data?.NotifyRecipients)) {
+      notifyRecipients = data.NotifyRecipients.map(r => ({
+        name: String(r.name||'').trim(),
+        email: String(r.email||'').trim(),
+        enabled: !!r.enabled
+      })).filter(r => r.email);
     }
   }
 
@@ -750,6 +823,119 @@ function appMain(){
     window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') endCopyMode(); });
   }
 
+  /* ---------------- Send Update (Email) ---------------- */
+  const sendBtn = document.getElementById('sendUpdateBtn');
+  const modal   = document.getElementById('sendModal');
+  const recList = document.getElementById('recList');
+  const recName = document.getElementById('recName');
+  const recEmail= document.getElementById('recEmail');
+  const recAdd  = document.getElementById('recAddBtn');
+  const remember= document.getElementById('rememberRecipients');
+  const noteEl  = document.getElementById('sendNote');
+  const sendNow = document.getElementById('sendNowBtn');
+  const sendCancel = document.getElementById('sendCancelBtn');
+  const sendBusy = document.getElementById('sendBusy');
+
+  function openSendModal(){
+    renderRecList();
+    noteEl.value = '';
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden','false');
+  }
+  function closeSendModal(){
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden','true');
+  }
+  window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeSendModal(); });
+
+  function renderRecList(){
+    if (!notifyRecipients.length){
+      recList.innerHTML = `<div style="font-size:13px;color:#666;">No saved recipients yet. Add a name/email below.</div>`;
+      return;
+    }
+    recList.innerHTML = '';
+    notifyRecipients.forEach((r, idx)=>{
+      const row = document.createElement('label');
+      row.className = 'rec-item';
+      row.innerHTML = `
+        <input type="checkbox" ${r.enabled ? 'checked':''} data-idx="${idx}" />
+        <span>${r.name ? r.name+' ' : ''}<small>&lt;${r.email}&gt;</small></span>
+        <button data-del="${idx}" style="margin-left:auto;font-size:12px;">Remove</button>
+      `;
+      recList.appendChild(row);
+    });
+
+    // toggle
+    recList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+      cb.onchange = () => {
+        const i = Number(cb.getAttribute('data-idx'));
+        notifyRecipients[i].enabled = cb.checked;
+      };
+    });
+    // remove
+    recList.querySelectorAll('button[data-del]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const i = Number(btn.getAttribute('data-del'));
+        notifyRecipients.splice(i,1);
+        renderRecList();
+        tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+      };
+    });
+  }
+
+  recAdd.onclick = ()=>{
+    const name = recName.value.trim();
+    const email= recEmail.value.trim();
+    if (!email) { alert('Enter an email address'); return; }
+    notifyRecipients.push({ name, email, enabled:true });
+    recName.value = ''; recEmail.value='';
+    renderRecList();
+    tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent())); // save list
+  };
+
+  sendBtn.onclick = openSendModal;
+  sendCancel.onclick = closeSendModal;
+
+  sendNow.onclick = async ()=>{
+    const selected = notifyRecipients.filter(r=> r.enabled).map(r=> r.email);
+    if (!selected.length){ alert('Select at least one recipient.'); return; }
+    sendBusy.style.display = 'inline';
+    sendNow.disabled = true;
+
+    // Optionally remember current selection as default
+    if (remember.checked){
+      tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+    }
+
+    // Ask server to compute diff & send
+    const payload = {
+      weekKey: state.key(),
+      to: selected,
+      note: noteEl.value || ''
+    };
+    try{
+      const r = await fetch('/.netlify/functions/send-update', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify(payload)
+      });
+      const t = await r.json().catch(()=> ({}));
+      if (r.ok && t.ok){
+        addLog('email-update-sent', {to:selected.length, week: payload.weekKey});
+        showStatus('Update sent.');
+        closeSendModal();
+      } else {
+        alert('Send failed: ' + (t.error || r.status));
+      }
+    } catch(e){
+      alert('Network error while sending.');
+    } finally {
+      sendBusy.style.display = 'none';
+      sendNow.disabled = false;
+    }
+  };
+
   /* ---------------- Load/Refresh ---------------- */
   async function loadWeekFor(monday){
     clearWeekGrid();
@@ -763,7 +949,7 @@ function appMain(){
     createGrid();
     attachCopyHandlers();
     apiLoadWeek(state.key()).then(applyWeekData);
-    apiLoadPersistent(); // loads PTOEmbedURL too
+    apiLoadPersistent(); // loads PTOEmbedURL + saved recipients
     showStatus('Ready.');
   })();
 }
