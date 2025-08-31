@@ -1,40 +1,35 @@
-// login.js – validates username/password against APP_USERS
-function parseUsers(env) {
-  const map = new Map();
-  (env || "").split(";").map(s => s.trim()).filter(Boolean).forEach(pair => {
-    const [u, ...rest] = pair.split(":");
-    const p = rest.join(":");
-    if (u && p != null) map.set(u.trim(), p);
-  });
-  return map;
-}
+const { parseUsers, signPayload, makeCookie } = require('./_authUtil');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method not allowed' };
+    return { statusCode: 405, body: JSON.stringify({ ok:false, error:'MethodNotAllowed' }) };
   }
-  try {
-    const body = JSON.parse(event.body || '{}');
-    const { username, password } = body;
-    const users = parseUsers(process.env.APP_USERS);
-    const expected = users.get(username);
-    if (expected && expected === password) {
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ok: true })
-      };
-    }
-    return {
-      statusCode: 401,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ok: false, error: 'Invalid credentials' })
-    };
-  } catch (e) {
-    return {
-      statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ok: false, error: String(e) })
-    };
+
+  let body = {};
+  try { body = JSON.parse(event.body||'{}'); } catch {}
+  const username = String(body.username||'').trim();
+  const password = String(body.password||'');
+  const remember = !!body.remember;
+
+  const users = parseUsers();
+  const match = users.find(u => u.username === username && u.password === password);
+
+  if (!match) {
+    return { statusCode: 401, body: JSON.stringify({ ok:false, error:'Invalid credentials' }) };
   }
+
+  const token = signPayload({
+    sub: match.username,
+    iat: Date.now(),
+    exp: Date.now() + (remember ? 1000*60*60*24*7 : 1000*60*60*4)
+  });
+
+  return {
+    statusCode: 200,
+    headers: {
+      'Set-Cookie': makeCookie(token, { remember }),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ ok:true, user:{ username: match.username } })
+  };
 };
