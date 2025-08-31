@@ -1,0 +1,7 @@
+{
+  "name": "hvac-scheduler-clean",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^5.0.0"
+  }
+}

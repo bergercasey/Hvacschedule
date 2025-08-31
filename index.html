@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>HVAC Weekly Schedule</title>
+<style>
+  :root { --cell-b: #ccc; --pad: 16px; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: var(--pad); background:#fff; }
+  h1 { text-align: center; margin: 0 0 10px; font-weight: 700; }
+  .button-row { text-align: center; margin-bottom: 10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .button-row button { padding: 6px 10px; font-size: 14px; cursor:pointer; }
+
+  /* Weekday header (Crew + Mon..Fri) */
+  .weekday-header {
+    display: grid; grid-template-columns: 160px repeat(5, 1fr);
+    text-align: center; font-weight: 700; border-bottom: 1px solid var(--cell-b);
+    padding-bottom: 6px; margin-bottom: 8px;
+  }
+  .weekday-header div { padding: 4px 0; }
+
+  /* Weekly grid */
+  .grid { display: grid; grid-template-columns: 160px repeat(5, 1fr); gap: 6px 4px; }
+  .crew-label { display:flex; flex-direction:column; align-items:center; font-weight:700; }
+  .crew-label input { width: 92%; margin: 2px 0; padding: 5px 6px; font-size: 15px; font-weight: 700; }
+
+  .cell { border: 1px solid var(--cell-b); padding: 2px; position: relative; min-height: 60px; background:#fff; }
+  .job-input, .helper-input { width: 100%; border: none; padding: 5px 6px; font-size: 15px; box-sizing: border-box; }
+  .job-input { resize: none; line-height:1.32; min-height: 58px; }
+  .helper-input { color: #0b62ff; }
+
+  .pto-box, .helper-pto-box { position:absolute; width:16px; height:16px; cursor:pointer; appearance:auto; -webkit-appearance:auto; }
+  .pto-box         { top:4px;  right:4px;  accent-color: red; }
+  .helper-pto-box  { bottom:4px; right:4px; accent-color: #0b62ff; }
+  .highlight-red { background-color: #ffe1e1; }
+
+  /* Copy mode visuals */
+  .copy-row-hint { outline: 2px dashed #9cc1ff; outline-offset: 2px; }
+  .copy-field-hint { box-shadow: inset 0 0 0 2px #9cc1ff; border-radius: 4px; }
+
+  /* Notes (Floaters + To-Do) */
+  #notesToggle { font-size: 13px; }
+  #bottomSection { display:flex; gap:10px; margin:12px auto 0; max-width:1100px; }
+  #floatersSection { flex:1; min-width:220px; }
+  #todoSection { flex:3; }
+  #todoSection .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:4px; }
+  .floater-name, .todo-job { padding:6px; font-size:15px; }
+
+  /* PTO Calendar panel */
+  #ptoPanel {
+    display:none; position:fixed; inset:40px 20px 20px 20px; background:#fff; border:1px solid #ccc;
+    box-shadow:0 10px 30px rgba(0,0,0,0.15); z-index:1000; border-radius:8px; overflow:hidden;
+  }
+  #ptoPanelHeader {
+    display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #ddd; background:#fafafa;
+  }
+  #ptoFrame { width:100%; height:100%; border:0; }
+  #ptoPanelFooter { position:absolute; bottom:0; left:0; right:0; background:#fafafa; border-top:1px solid #ddd; padding:6px 10px; font-size:12px; }
+
+  /* Calendar popup (date picker) */
+  .calendar-popup { position:absolute; top:68px; left:20px; background:#fff; border:1px solid #ccc; padding:10px; z-index:999; font-size:14px; width:260px; box-shadow:0 6px 18px rgba(0,0,0,.1) }
+  .calendar-header { display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:5px; }
+  .calendar-nav { cursor:pointer; padding:0 10px; user-select:none; }
+  .calendar-popup table { width:100%; border-collapse:collapse; }
+  .calendar-popup th, .calendar-popup td { width:14.2%; text-align:center; padding:4px; cursor:pointer; }
+  .calendar-popup th { font-weight:700; }
+  .calendar-popup td:hover { background:#eee; }
+
+  /* Tiny floating status bar (replaces Change Log) */
+  #statusBar{
+    position: fixed;
+    right: 14px;
+    bottom: 12px;
+    max-width: 60vw;
+    font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color:#0a0a0a;
+    background: rgba(250,250,250,.95);
+    border:1px solid #ddd;
+    border-radius: 6px;
+    padding: 6px 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08);
+    z-index: 1200;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+  #statusBar.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+  @media print { #statusBar{ display:none !important; } }
+</style>
+</head>
+<body>
+
+  <h1>HVAC Weekly Schedule</h1>
+
+  <div class="button-row">
+    <button id="calendarBtn">📅</button>
+    <button id="prevWeekBtn">Previous Week</button>
+    <button id="todayBtn">Today</button>
+    <button id="nextWeekBtn">Next Week</button>
+    <button id="ptoBtn">PTO Calendar</button>
+    <button id="notesToggle">Hide Notes</button>
+    <button id="printBtn">Print</button>
+  </div>
+
+  <div class="weekday-header" id="weekdayHeader"></div>
+  <div class="grid" id="week-grid"></div>
+  <div id="calendarContainer" class="calendar-popup" style="display:none;"></div>
+
+  <!-- PTO Calendar Panel -->
+  <div id="ptoPanel" aria-hidden="true">
+    <div id="ptoPanelHeader">
+      <div><strong>PTO Calendar</strong> <span id="ptoHint" style="font-size:12px;color:#666;"></span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button id="ptoOpenInNew" title="Open in new tab">Open ↗</button>
+        <button id="ptoClose">Close</button>
+      </div>
+    </div>
+    <iframe id="ptoFrame" src="about:blank" loading="lazy"></iframe>
+    <div id="ptoPanelFooter">
+      Tip: view the PTO calendar, then tick the red/blue PTO boxes in the grid for who’s out.
+    </div>
+  </div>
+
+  <!-- Notes: Floaters + To-Do -->
+  <div id="bottomSection" data-persistent="1">
+    <div id="floatersSection">
+      <h3 style="text-align:center;margin:4px 0;">Floaters</h3>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 1"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 2"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 3"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 4"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 5"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 6"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 7"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 8"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 9"></div>
+        <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 10"></div>
+      </div>
+
+      <!-- PTO Calendar Embed URL (saved persistently) -->
+      <div style="margin-top:10px; border-top:1px solid #eee; padding-top:8px;">
+        <label for="ptoUrl" style="font-size:13px;display:block;margin-bottom:4px;">
+          PTO Calendar Embed URL (Google or Outlook)
+        </label>
+        <input id="ptoUrl" type="url" placeholder="https://calendar.google.com/calendar/embed?..." style="width:100%; padding:6px; font-size:14px;">
+        <div style="font-size:12px;color:#555;margin-top:4px;">
+          Paste the read-only embed link for your PTO calendar. Click “PTO Calendar” above to view it in-app.
+        </div>
+      </div>
+    </div>
+
+    <div id="todoSection">
+      <h3 style="text-align:center;margin:4px 0;">Need to be done jobs</h3>
+      <div class="grid2">
+        <input type="text" class="todo-job" placeholder="Job 1">
+        <input type="text" class="todo-job" placeholder="Job 2">
+        <input type="text" class="todo-job" placeholder="Job 3">
+        <input type="text" class="todo-job" placeholder="Job 4">
+        <input type="text" class="todo-job" placeholder="Job 5">
+        <input type="text" class="todo-job" placeholder="Job 6">
+        <input type="text" class="todo-job" placeholder="Job 7">
+        <input type="text" class="todo-job" placeholder="Job 8">
+        <input type="text" class="todo-job" placeholder="Job 9">
+        <input type="text" class="todo-job" placeholder="Job 10">
+        <input type="text" class="todo-job" placeholder="Job 11">
+        <input type="text" class="todo-job" placeholder="Job 12">
+      </div>
+    </div>
+  </div>
+
+  <!-- Tiny floating status bar -->
+  <div id="statusBar" aria-live="polite" aria-atomic="true" class="hidden">Ready.</div>
+
+<script>
+/* =========================
+   HVAC — controller (11 CREWS + NOTES VISIBLE + LAST ROW LEAD ONLY + PTO CALENDAR EMBED)
+   ========================= */
+
+(function(){
+  /* ---------------- Tiny status helper (auto-fade) ---------------- */
+  const statusEl = document.getElementById('statusBar');
+  const ts = () => new Date().toLocaleTimeString();
+
+  let fadeTimer = null;
+  function showStatus(text, sticky=false){
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.classList.remove('hidden');
+    // flash background briefly
+    statusEl.style.background = 'rgba(228,248,228,.95)';
+    setTimeout(()=>{ statusEl.style.background = 'rgba(250,250,250,.95)'; }, 150);
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(()=>{
+      statusEl.classList.add('hidden');
+      statusEl.textContent = 'Ready.';
+    }, sticky ? 8000 : 4200);
+  }
+
+  /** Logger compatible with your previous addLog() calls */
+  function addLog(msg, obj){
+    const line = '['+ts()+'] '+msg+(obj? ' '+JSON.stringify(obj):'');
+    try{ console.log(line); }catch{}
+    showStatus(msg, /*sticky=*/false);
+  }
+  window.addLog = addLog;
+
+  /* ---------------- Settings ---------------- */
+  const ROWS = 11; // only eleven crews
+
+  /* ---------------- Helpers ---------------- */
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+  const pad2 = n => String(n).padStart(2,'0');
+
+  function mondayOf(d){ const x=new Date(d); x.setHours(0,0,0,0); const wd=x.getDay(); const diff=(wd===0?-6:1-wd); x.setDate(x.getDate()+diff); return x; }
+  function isoWeekKeyFromDate(d){
+    const x=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    x.setUTCDate(x.getUTCDate()+4-(x.getUTCDay()||7));
+    const y0=new Date(Date.UTC(x.getUTCFullYear(),0,1));
+    const wk=Math.ceil((((x-y0)/86400000)+1)/7);
+    return `${x.getUTCFullYear()}-W${String(wk).padStart(2,'0')}`;
+  }
+  function fmtHeader(d){ return `${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getMonth()+1}/${d.getDate()}`; }
+
+  /* ---------------- State ---------------- */
+  const state = {
+    monday: (()=>{ const s=localStorage.getItem('displayedMonday'); return s? new Date(s) : mondayOf(new Date()); })(),
+    setMonday(d){
+      this.monday = mondayOf(d);
+      localStorage.setItem('displayedMonday', this.monday.toISOString());
+      renderHeader(this.monday);
+      loadWeekFor(this.monday);
+    },
+    key(){ return isoWeekKeyFromDate(this.monday); }
+  };
+  window.hvacSetWeek = (input)=> { const d = input instanceof Date ? input : new Date(input); state.setMonday(d); };
+
+  /* ---------------- UI Elements ---------------- */
+  const header = document.getElementById('weekdayHeader');
+  const grid   = document.getElementById('week-grid');
+  const notes  = document.getElementById('bottomSection');
+  const toggle = document.getElementById('notesToggle');
+
+  const ptoPanel = document.getElementById('ptoPanel');
+  const ptoFrame = document.getElementById('ptoFrame');
+  const ptoClose = document.getElementById('ptoClose');
+  const ptoOpenInNew = document.getElementById('ptoOpenInNew');
+  const ptoHint = document.getElementById('ptoHint');
+
+  toggle.addEventListener('click', ()=>{
+    const isHidden = notes.style.display === 'none';
+    notes.style.display = isHidden ? '' : 'none';
+    toggle.textContent = isHidden ? 'Hide Notes' : 'Show Notes';
+    addLog('notes-toggle', {visible: isHidden});
+  });
+
+  function renderHeader(startDate){
+    header.innerHTML = '<div>Crew</div>';
+    for(let i=0;i<5;i++){
+      const d=new Date(startDate); d.setDate(startDate.getDate()+i);
+      const div=document.createElement('div'); div.textContent = fmtHeader(d);
+      header.appendChild(div);
+    }
+  }
+
+  function createGrid(){
+    grid.innerHTML = '';
+    for(let row=0; row<ROWS; row++){
+      // Crew Lead / Apprentice (last row: Lead only)
+      const crew = document.createElement('div');
+      crew.className = 'crew-label';
+      crew.setAttribute('data-persistent','1');
+
+      if (row === ROWS - 1) {
+        // LAST ROW: Lead only (no Apprentice box)
+        crew.innerHTML = `<input type="text" class="lead-input" placeholder="Lead">`;
+      } else {
+        crew.innerHTML = `
+          <input type="text" class="lead-input" placeholder="Lead">
+          <input type="text" class="apprentice-input" placeholder="Apprentice">
+        `;
+      }
+      grid.appendChild(crew);
+
+      // 5 day cells
+      for(let col=0; col<5; col++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.row = row;
+        cell.dataset.col = col;
+
+        const job = document.createElement('textarea');
+        job.className = 'job-input';
+        job.rows = 2;
+        job.placeholder = (col===0 ? 'Job' : '');
+        job.dataset.row = row; job.dataset.col = col; job.dataset.field='job';
+        cell.appendChild(job);
+
+        const helper = document.createElement('input');
+        helper.className = 'helper-input';
+        helper.placeholder = (col===0 ? 'Helper' : '');
+        helper.dataset.row = row; helper.dataset.col = col; helper.dataset.field='helper';
+        cell.appendChild(helper);
+
+        const pto = document.createElement('input');
+        pto.type = 'checkbox';
+        pto.className = 'pto-box';
+        pto.addEventListener('change', ()=>{
+          cell.classList.toggle('highlight-red', pto.checked);
+        });
+        cell.appendChild(pto);
+
+        const helperPto = document.createElement('input');
+        helperPto.type = 'checkbox';
+        helperPto.className = 'helper-pto-box'; // BLUE check, no shading
+        cell.appendChild(helperPto);
+
+        grid.appendChild(cell);
+      }
+    }
+  }
+
+  /* ---------------- Clear/Collect/Apply ---------------- */
+  function clearWeekGrid(){
+    grid.querySelectorAll('.cell .job-input').forEach(el => el.value='');
+    grid.querySelectorAll('.cell .helper-input').forEach(el => el.value='');
+    grid.querySelectorAll('.cell .pto-box, .cell .helper-pto-box').forEach(cb => {
+      const wasLead = cb.classList.contains('pto-box') && cb.checked;
+      cb.checked=false;
+      if (wasLead) cb.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+  }
+
+  function collectWeekFull(){
+    const jobs   = Array.from(grid.querySelectorAll('.job-input'));
+    const helps  = Array.from(grid.querySelectorAll('.helper-input'));
+    const pto    = Array.from(grid.querySelectorAll('.pto-box'));
+    const hpto   = Array.from(grid.querySelectorAll('.helper-pto-box'));
+    const out={}, max=Math.max(jobs.length, helps.length, pto.length, hpto.length);
+    for (let i=0;i<max;i++){
+      const row=Math.floor(i/5)+1, day=DAYS[i%5], r=pad2(row), base=`${day}:${r}`;
+      out[`${base}:job`]       = jobs[i]  ? (jobs[i].value  || '') : '';
+      out[`${base}:helper`]    = helps[i] ? (helps[i].value || '') : '';
+      out[`${base}:pto`]       = !!(pto[i]   && pto[i].checked);
+      out[`${base}:helperPto`] = !!(hpto[i]  && hpto[i].checked);
+    }
+    return out;
+  }
+
+  function applyWeekData(data){
+    clearWeekGrid();
+    const jobs   = Array.from(grid.querySelectorAll('.job-input'));
+    const helps  = Array.from(grid.querySelectorAll('.helper-input'));
+    const pto    = Array.from(grid.querySelectorAll('.pto-box'));
+    const hpto   = Array.from(grid.querySelectorAll('.helper-pto-box'));
+    Object.entries(data||{}).forEach(([k,v])=>{
+      const m=k.match(/^(Mon|Tue|Wed|Thu|Fri):(\d{2}):(job|helper|pto|helperPto)$/); if(!m) return;
+      const idx = (parseInt(m[2],10)-1)*5 + (['Mon','Tue','Wed','Thu','Fri'].indexOf(m[1]));
+      if (m[3]==='job'      && jobs[idx])  jobs[idx].value   = String(v||'');
+      if (m[3]==='helper'   && helps[idx]) helps[idx].value  = String(v||'');
+      if (m[3]==='pto'      && pto[idx])  { pto[idx].checked = !!v; pto[idx].dispatchEvent(new Event('change',{bubbles:true})); }
+      if (m[3]==='helperPto'&& hpto[idx]) { hpto[idx].checked= !!v; }
+    });
+  }
+
+  /* ---------------- Persistent ---------------- */
+  function collectPersistent(){
+    const out={};
+    grid.querySelectorAll('.lead-input').forEach((el,i)=> out[`Lead:${pad2(i+1)}`]=el.value||'');
+    grid.querySelectorAll('.apprentice-input').forEach((el,i)=> out[`Apprentice:${pad2(i+1)}`]=el.value||'');
+    document.querySelectorAll('.floater-name').forEach((el,i)=> out[`Floater:${pad2(i+1)}`]=el.value||'');
+    document.querySelectorAll('.todo-job').forEach((el,i)=> out[`Todo:${pad2(i+1)}`]=el.value||'');
+
+    // PTO calendar embed URL
+    const ptoUrl = document.getElementById('ptoUrl')?.value?.trim() || '';
+    out['PTOEmbedURL'] = ptoUrl;
+
+    return out;
+  }
+  function applyPersistent(data){
+    const put=(sel,prefix,root=document)=> {
+      const list = Array.from(root.querySelectorAll(sel));
+      Object.entries(data||{}).forEach(([k,v])=>{
+        const m=k.match(new RegExp(`^${prefix}:(\\d{2})$`)); if(!m) return;
+        const idx=parseInt(m[1],10)-1; if (list[idx]) list[idx].value = String(v||'');
+      });
+    };
+    put('.lead-input','Lead',grid);
+    put('.apprentice-input','Apprentice',grid);
+    put('.floater-name','Floater',document);
+    put('.todo-job','Todo',document);
+
+    // PTO calendar embed URL
+    if (data && typeof data.PTOEmbedURL === 'string') {
+      const url = data.PTOEmbedURL;
+      const input = document.getElementById('ptoUrl');
+      if (input) input.value = url;
+      cachePTOUrl = url; // seed cache
+      updatePTOHint(url);
+    }
+  }
+
+  /* ---------------- Netlify Endpoints ---------------- */
+  async function apiLoadWeek(key){
+    const r = await fetch(`/.netlify/functions/load-week?weekKey=${encodeURIComponent(key)}`);
+    const j = await r.json().catch(()=> ({}));
+    addLog('load-week', {status:r.status, ok:r.ok, key});
+    return (r.ok && j && j.ok) ? (j.data||{}) : {};
+  }
+  async function apiSaveWeek(key, data){
+    const r = await fetch('/.netlify/functions/save-week', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ weekKey:key, data })
+    });
+    const t = await r.text().catch(()=> ''); addLog('save-week', {status:r.status, ok:r.ok, body:t.slice(0,140)});
+  }
+  async function apiSavePersistent(data){
+    try{
+      const r = await fetch('/.netlify/functions/save-persistent', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ data })
+      });
+      addLog('save-persistent', {status:r.status, ok:r.ok});
+    }catch{}
+  }
+  async function apiLoadPersistent(){
+    try{
+      const r = await fetch('/.netlify/functions/load-persistent');
+      const j = await r.json().catch(()=> ({}));
+      if (j && j.ok) applyPersistent(j.data||{});
+      addLog('load-persistent', {status:r.status, ok:r.ok});
+    }catch{}
+  }
+
+  /* ---------------- Autosave (debounced) ---------------- */
+  let tWeek=null, tPersist=null;
+  const deb = (slot, fn)=>{ clearTimeout(slot?.id); const id=setTimeout(fn, 650); return {id}; };
+
+  grid.addEventListener('input', (e)=>{
+    const el=e.target;
+    if (el.classList.contains('job-input') || el.classList.contains('helper-input')) {
+      tWeek = deb(tWeek, ()=> apiSaveWeek(state.key(), collectWeekFull()));
+    }
+    if (el.classList.contains('lead-input') || el.classList.contains('apprentice-input')) {
+      tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+    }
+  }, {passive:true});
+
+  grid.addEventListener('change', (e)=>{
+    const el=e.target;
+    if (el.classList.contains('pto-box') || el.classList.contains('helper-pto-box')) {
+      tWeek = deb(tWeek, ()=> apiSaveWeek(state.key(), collectWeekFull()));
+    }
+  }, {passive:true});
+
+  document.querySelectorAll('.floater-name, .todo-job').forEach(el=>{
+    el.addEventListener('input', ()=> { tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent())); }, {passive:true});
+  });
+
+  // Save PTO embed URL on change
+  let cachePTOUrl = '';
+  const ptoUrlEl = document.getElementById('ptoUrl');
+  if (ptoUrlEl){
+    ptoUrlEl.addEventListener('change', ()=>{
+      cachePTOUrl = ptoUrlEl.value.trim();
+      tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+      updatePTOHint(cachePTOUrl);
+    }, {passive:true});
+  }
+
+  /* ---------------- Calendar (date picker) ---------------- */
+  let calOffset = 0;
+  const calWrap = document.getElementById('calendarContainer');
+
+  function showCalendar(){
+    calWrap.style.display='block';
+    renderCalendar(state.monday);
+    const outside = (e)=>{ if (!calWrap.contains(e.target) && e.target.id !== 'calendarBtn'){ hideCalendar(); } };
+    document.addEventListener('click', outside, {capture:true, once:true});
+  }
+  function hideCalendar(){ calWrap.style.display='none'; calOffset=0; }
+  window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') hideCalendar(); });
+  window.addEventListener('resize', hideCalendar);
+
+  function renderCalendar(referenceDate){
+    const ref = new Date(referenceDate); ref.setMonth(ref.getMonth()+calOffset);
+    const y=ref.getFullYear(), m=ref.getMonth();
+    const first=new Date(y,m,1), last=new Date(y,m+1,0);
+    const monthName = ref.toLocaleString('default',{month:'long'});
+    let html = `<div class="calendar-header">
+      <span class="calendar-nav" id="calPrev">‹</span>
+      <span>${monthName} ${y}</span>
+      <span class="calendar-nav" id="calNext">›</span>
+    </div><table><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr><tr>`;
+    for (let i=0;i<first.getDay();i++) html += "<td></td>";
+    for (let d=1; d<=last.getDate(); d++){
+      const dt = new Date(y,m,d);
+      html += `<td data-ymd="${y}-${m+1}-${d}">${d}</td>`;
+      if (dt.getDay()===6) html += "</tr><tr>";
+    }
+    html += "</tr></table>";
+    calWrap.innerHTML = html;
+    document.getElementById('calPrev').onclick = ()=>{ calOffset -= 1; renderCalendar(referenceDate); };
+    document.getElementById('calNext').onclick = ()=>{ calOffset += 1; renderCalendar(referenceDate); };
+    calWrap.querySelectorAll('td[data-ymd]').forEach(td=>{
+      td.onclick = ()=>{
+        const [Y,M,D] = td.getAttribute('data-ymd').split('-').map(Number);
+        hvacSetWeek(new Date(Y, M-1, D));
+        hideCalendar();
+      };
+    });
+  }
+
+  /* ---------------- PTO Calendar embed handling ---------------- */
+  function updatePTOHint(url){
+    if (!url) { ptoHint.textContent = ' — add an Embed URL in Notes'; return; }
+    let provider = '';
+    if (url.includes('calendar.google.com')) provider = 'Google';
+    else if (url.includes('outlook.office.com') || url.includes('outlook.live.com')) provider = 'Outlook';
+    ptoHint.textContent = provider ? ` — ${provider} embed` : '';
+  }
+
+  function openPtoPanel(){
+    const url = cachePTOUrl || document.getElementById('ptoUrl')?.value?.trim();
+    if (!url){
+      alert('Add the PTO calendar Embed URL in the Notes panel first.');
+      return;
+    }
+    ptoFrame.src = url;
+    ptoOpenInNew.onclick = ()=> window.open(url, '_blank');
+    ptoPanel.style.display = 'block';
+    ptoPanel.setAttribute('aria-hidden','false');
+    addLog('open-pto');
+  }
+  function closePtoPanel(){
+    ptoPanel.style.display = 'none';
+    ptoPanel.setAttribute('aria-hidden','true');
+    ptoFrame.src = 'about:blank';
+    addLog('close-pto');
+  }
+
+  document.getElementById('ptoBtn').onclick = openPtoPanel;
+  document.getElementById('ptoClose').onclick = closePtoPanel;
+  window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closePtoPanel(); });
+
+  /* ---------------- Navigation Buttons ---------------- */
+  document.getElementById('calendarBtn').onclick = ()=>{
+    if (calWrap.style.display==='none') showCalendar(); else hideCalendar();
+  };
+  document.getElementById('prevWeekBtn').onclick = ()=>{ hideCalendar(); clearWeekGrid(); hvacSetWeek(new Date(state.monday.getTime() - 7*24*60*60*1000)); };
+  document.getElementById('nextWeekBtn').onclick = ()=>{ hideCalendar(); clearWeekGrid(); hvacSetWeek(new Date(state.monday.getTime() + 7*24*60*60*1000)); };
+  document.getElementById('todayBtn').onclick    = ()=>{ hideCalendar(); clearWeekGrid(); hvacSetWeek(new Date()); };
+  document.getElementById('printBtn').onclick    = ()=> window.print();
+
+  /* ---------------- Tap-copy & Drag-paste (row only) ---------------- */
+  let copyActive = false;
+  let copyField = null;    // 'job' | 'helper'
+  let copyValue = '';
+  let copyRow = -1;
+  let visitedCols = new Set();
+  let lastPointerDown = 0;
+
+  function startCopyMode(fromEl){
+    copyActive = true;
+    copyField = fromEl.dataset.field;
+    copyValue = fromEl.value || '';
+    copyRow   = parseInt(fromEl.dataset.row,10);
+    visitedCols.clear();
+    grid.querySelectorAll(`.cell[data-row="${copyRow}"]`).forEach(c=> c.classList.add('copy-row-hint'));
+    fromEl.classList.add('copy-field-hint');
+    addLog('copy-start', {row: copyRow, field: copyField});
+  }
+  function endCopyMode(){
+    copyActive = false; copyField=null; copyValue=''; copyRow=-1; visitedCols.clear();
+    grid.querySelectorAll('.copy-row-hint').forEach(c=> c.classList.remove('copy-row-hint'));
+    grid.querySelectorAll('.copy-field-hint').forEach(el=> el.classList.remove('copy-field-hint'));
+    addLog('copy-end');
+  }
+  function pasteAtPoint(clientX, clientY){
+    if (!copyActive) return;
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return;
+    const cell = el.closest?.('.cell');
+    if (!cell) return;
+    const row = parseInt(cell.dataset.row,10);
+    if (row !== copyRow) return;
+    const col = parseInt(cell.dataset.col,10);
+    if (visitedCols.has(col)) return;
+    visitedCols.add(col);
+    const target = cell.querySelector(copyField === 'job' ? '.job-input' : '.helper-input');
+    if (target){
+      target.value = copyValue;
+      target.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  }
+  function attachCopyHandlers(){
+    grid.addEventListener('pointerdown', (e)=>{
+      const t = e.target;
+      if (!(t.classList.contains('job-input') || t.classList.contains('helper-input'))) return;
+      const now = Date.now();
+      if (now - lastPointerDown < 350){
+        e.preventDefault();
+        startCopyMode(t);
+        visitedCols.add(parseInt(t.dataset.col,10));
+      }
+      lastPointerDown = now;
+    }, {passive:false});
+    grid.addEventListener('pointermove', (e)=>{ if (copyActive) pasteAtPoint(e.clientX, e.clientY); }, {passive:true});
+    const endAll = ()=> { if (copyActive) endCopyMode(); };
+    grid.addEventListener('pointerup', endAll, {passive:true});
+    grid.addEventListener('pointercancel', endAll, {passive:true});
+    window.addEventListener('blur', endAll);
+    window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') endCopyMode(); });
+  }
+
+  /* ---------------- Load/Refresh ---------------- */
+  async function loadWeekFor(monday){
+    clearWeekGrid();
+    const data = await apiLoadWeek(isoWeekKeyFromDate(monday));
+    applyWeekData(data);
+  }
+
+  /* ---------------- Init ---------------- */
+  (function init(){
+    renderHeader(state.monday);
+    createGrid();
+    attachCopyHandlers();
+    apiLoadWeek(state.key()).then(applyWeekData);
+    apiLoadPersistent(); // loads PTOEmbedURL too
+    showStatus('Ready.');
+  })();
+
+})();
+</script>
+
+</body>
+</html>
