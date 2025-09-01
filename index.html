@@ -183,6 +183,55 @@
   padding: 20px;
   box-sizing: border-box;
 }
+/* ===== FINAL MODAL/L0GIN TUNE ===== */
+
+/* Modal width: narrower & centered, with right-side gutter inside the list */
+#sendModal > .card {
+  width: 94vw !important;     /* overall width on small screens */
+  max-width: 600px !important;/* cap on tablets/desktops — adjust to taste */
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 16px;               /* ensures inner space around all edges */
+}
+
+/* Recipient list: add inner padding; keep items from touching right edge */
+#sendModal .rec-list {
+  padding: 10px 14px;          /* ← right gutter so bubbles/buttons aren’t tight */
+  border-radius: 8px;
+}
+
+/* Row spacing and checkbox spacing */
+#sendModal .rec-item { 
+  padding: 6px 4px; 
+  gap: 10px; 
+}
+#sendModal .rec-item input[type="checkbox"]{
+  width: 18px; height: 18px;
+  margin: 0 10px 0 0;          /* ← space after the bubble */
+  appearance: auto; -webkit-appearance: checkbox;
+}
+#sendModal .rec-item span{
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#sendModal .rec-item button{
+  margin-left: 10px;           /* ← keeps the Remove button off the edge */
+  padding: 4px 10px;
+}
+
+/* (If by “bubbles” you meant the PTO checks in the grid, add a touch of right padding) */
+.cell .pto-box         { right: 8px; }
+.cell .helper-pto-box  { right: 8px; }
+
+/* Login card: slightly narrower than modal, with comfy padding */
+#authGate .auth-card {
+  width: 94vw !important;
+  max-width: 560px !important;  /* adjust if you want this to match the modal */
+  padding: 20px 22px !important;
+  box-sizing: border-box;
+}
+.auth-actions { gap: 10px; }
 
 </style>
 </head>
