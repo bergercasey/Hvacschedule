@@ -167,6 +167,23 @@
   .auth-actions button{
     height:40px; border-radius:8px; background:#0b62ff; color:#fff; border:none; font-weight:600;
   }
+/* FORCE the wider modal/login sizes (bulletproof override) */
+#sendModal > .card {
+  width: 98vw !important;     /* grows with screen */
+  max-width: 650px !important;/* cap — change this number to taste */
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+#authGate .auth-card {
+  width: 96vw !important;     /* small screens */
+  max-width: 620px !important;/* cap on tablets/desktops */
+  padding: 20px;
+  box-sizing: border-box;
+}
+
 </style>
 </head>
 <body>
