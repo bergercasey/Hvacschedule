@@ -1,4 +1,4 @@
-// netlify/functions/send-update.js (SMTP via Gmail, server keeps baseline via load/save-persistent; Blobs optional)
+// netlify/functions/send-update.js (SMTP via Gmail, server baseline via load/save-persistent; crew names in Field; Blobs optional)
 "use strict";
 const { getStore } = require('@netlify/blobs');
 const { getCookie, verifyToken } = require('./_authUtil');
@@ -30,26 +30,29 @@ function escapeHtml(s) {
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
   });
 }
-function prettyKey(k){
-  // Mon:01:job -> Mon 1 — Job
+function titleCaseWord(w){
+  return w.replace(/(^|\b)([a-z])/g, function(_,a,b){ return a + b.toUpperCase(); });
+}
+function prettyKey(k, crewMap){
   try{
-    var parts = String(k).split(':'); // [day,row,field]
-    var day = parts[0]||'';
-    var row = parts[1]||'';
+    var parts = String(k).split(':');    // Mon:01:job
+    var day   = parts[0]||'';
+    var row   = parts[1]||'';
     var field = parts[2]||'';
-    if (row.length && row[0]==='0') row = String(parseInt(row,10));
-    field = field.replace(/(^|\b)([a-z])/g,function(_,a,b){return a + b.toUpperCase();});
-    field = field.replace(/Pto/i,'PTO');
-    return (day + ' ' + (row||'') + ' — ' + field).trim();
+    if (row && row[0]==='0') row = String(parseInt(row,10));
+    field = titleCaseWord(field).replace(/Pto/i,'PTO');
+    var crew = crewMap && crewMap[row] ? crewMap[row] : '';
+    // Example: "Matt — Mon 1 — Job"
+    return (crew ? (crew + ' — ') : '') + (day + ' ' + (row||'') + ' — ' + field).trim();
   } catch(e){ return k; }
 }
-function renderHtml(weekKey, actor, note, changes, metaNote) {
+function renderHtml(weekKey, actor, note, changes, metaNote, crewMap) {
   const rows = changes.slice(0, 200).map(function(c){
     const fromStr = (c.from === undefined || c.from === null) ? '' : String(c.from);
     const toStr   = (c.to   === undefined || c.to   === null) ? '' : String(c.to);
     return (
       '<tr>' +
-      '<td style="padding:6px;border:1px solid #eee;">' + escapeHtml(prettyKey(c.key)) + '</td>' +
+      '<td style="padding:6px;border:1px solid #eee;">' + escapeHtml(prettyKey(c.key, crewMap)) + '</td>' +
       '<td style="padding:6px;border:1px solid #eee;">' + escapeHtml(fromStr.substring(0,160)) + '</td>' +
       '<td style="padding:6px;border:1px solid #eee;">' + escapeHtml(toStr.substring(0,160)) + '</td>' +
       '</tr>'
@@ -79,7 +82,7 @@ function renderHtml(weekKey, actor, note, changes, metaNote) {
   );
 }
 
-// Blobs may not be available in this function environment; don’t crash.
+// Blobs may not be available; don’t crash.
 function tryGetStore(name) {
   try { return getStore({ name }); }
   catch (e) {
@@ -92,7 +95,7 @@ function tryGetStore(name) {
   }
 }
 
-/* ------- call your existing HTTP functions so we don't need index changes ------- */
+/* ------- use your existing HTTP functions ------- */
 async function httpJson(url, opts) {
   opts = opts || {};
   const r = await fetch(url, opts);
@@ -112,7 +115,7 @@ async function loadWeekViaHttp(event, weekKey) {
     return (j && j.ok && j.data) ? j.data : {};
   } catch(e){ console.warn('[send-update] HTTP load-week failed:', e && e.message); return {}; }
 }
-async function loadBaselineViaHttp(event) {
+async function loadPersistentViaHttp(event) {
   try {
     const host = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
     const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
@@ -123,7 +126,7 @@ async function loadBaselineViaHttp(event) {
     return res.json.data || {};
   } catch(e){ console.warn('[send-update] HTTP load-persistent failed:', e && e.message); return {}; }
 }
-async function saveBaselineViaHttp(event, data) {
+async function savePersistentViaHttp(event, data) {
   try {
     const host = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
     const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
@@ -136,6 +139,29 @@ async function saveBaselineViaHttp(event, data) {
     });
     return res.ok && res.json && res.json.ok;
   } catch(e){ console.warn('[send-update] HTTP save-persistent failed:', e && e.message); return false; }
+}
+
+// Build map of row -> crew name (Lead preferred, else Apprentice)
+function buildCrewMap(persistent){
+  const map = {};
+  if (!persistent) return map;
+  Object.keys(persistent).forEach(function(key){
+    if (key.indexOf('Lead:')===0){
+      var row = key.split(':')[1] || '';
+      var name = persistent[key]||'';
+      if (name) map[row] = name;
+    }
+  });
+  Object.keys(persistent).forEach(function(key){
+    if (key.indexOf('Apprentice:')===0){
+      var row = key.split(':')[1] || '';
+      if (!map[row]){
+        var nm = persistent[key]||'';
+        if (nm) map[row] = nm;
+      }
+    }
+  });
+  return map;
 }
 
 async function sendEmailSMTP(opts) {
@@ -185,10 +211,11 @@ exports.handler = async function(event){
   if (weeksStore) current = await weeksStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; }) || {};
   else            current = await loadWeekViaHttp(event, weekKey);
 
-  // previous snapshot from persistent (no index change needed)
-  var persistent = await loadBaselineViaHttp(event);
+  // persistent (for both baseline and crew names)
+  var persistent = await loadPersistentViaHttp(event);
   if (!persistent || typeof persistent !== 'object') persistent = {};
   if (!persistent.NotifyBaseline) persistent.NotifyBaseline = {};
+  var crewMap = buildCrewMap(persistent);
   var last = persistent.NotifyBaseline[weekKey] || null;
 
   // first time = initialize (0 changes)
@@ -199,14 +226,14 @@ exports.handler = async function(event){
   var metaNote = firstInit ? 'First notification for this week — baseline initialized. Future emails will show only changed fields.' : '';
 
   const subject = 'HVAC schedule update — ' + weekKey + ' (' + changes.length + ' change' + (changes.length === 1 ? '' : 's') + ')';
-  const html    = renderHtml(weekKey, actor, note, changes, metaNote);
+  const html    = renderHtml(weekKey, actor, note, changes, metaNote, crewMap);
 
   try { await sendEmailSMTP({ to: to, subject: subject, html: html }); }
   catch (e) { return { statusCode: 502, body: JSON.stringify({ ok:false, error: e.message }) }; }
 
   // store new baseline for next time
   persistent.NotifyBaseline[weekKey] = current;
-  await saveBaselineViaHttp(event, persistent);
+  await savePersistentViaHttp(event, persistent);
 
   return { statusCode: 200, body: JSON.stringify({ ok:true, sent: to.length, changes: changes.length, firstInit: firstInit }) };
 };
