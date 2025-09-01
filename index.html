@@ -122,6 +122,14 @@
     width:100%; padding:10px; font-size:15px; border:1px solid #d1d5db; border-radius:6px;
   }
   .auth-error { color:#b00020; font-size:13px; margin-top:10px; min-height: 18px; }
+/* Make login popup narrower */
+.auth-card{
+  width: min(420px, calc(100vw - (var(--gutter-inline) * 2)));
+  padding: 18px;        /* a touch tighter inside */
+}
+.auth-card h2{ font-size: 16px; }
+.auth-card input[type="text"],
+.auth-card input[type="password"]{ font-size:14px; padding:8px 10px; }
 
   /* ===== Send Update modal ===== */
   #sendModal {
