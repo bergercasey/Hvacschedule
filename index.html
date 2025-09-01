@@ -307,14 +307,10 @@
    GLOBAL USER CONTEXT
    ========================= */
 window.currentUser = null;      // set after auth
-// Optional role gating if you later return canSend from the server:
-// window.canSend = true;
+// window.canSend = true;       // (optional role gating later)
 
 /* =========================
    AUTH ENDPOINTS (Netlify Functions)
-   - /.netlify/functions/auth-me
-   - /.netlify/functions/login      { username, password }
-   - /.netlify/functions/logout
    ========================= */
 const Auth = (() => {
   async function me(){
@@ -367,11 +363,8 @@ const Auth = (() => {
     app.style.display  = 'block';
     app.removeAttribute('aria-hidden');
     document.body.style.paddingTop = '28px';
-
-    // Autofocus convenience if they log out/in later
     try { document.getElementById('authUserField')?.focus(); } catch {}
-
-    appMain(); // run the real app now
+    appMain();
     aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
     return;
   }
@@ -381,7 +374,6 @@ const Auth = (() => {
   app.style.display  = 'none';
   aBar.style.display = 'none';
 
-  // Autofocus username; allow Enter on password to submit
   try { document.getElementById('authUserField')?.focus(); } catch {}
   const pass = document.getElementById('authPassField');
   if (pass) pass.addEventListener('keydown', (e)=>{ if (e.key==='Enter') form.requestSubmit(); });
@@ -404,7 +396,7 @@ const Auth = (() => {
     app.removeAttribute('aria-hidden');
     document.body.style.paddingTop = '28px';
     aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
-    appMain(); // run the real app now
+    appMain();
   }, { passive:false });
 })();
 
@@ -412,10 +404,9 @@ const Auth = (() => {
    HVAC — controller (wrapped in appMain())
    ========================= */
 function appMain(){
-  /* ---------------- Tiny status helper (auto-fade) ---------------- */
+  /* ---------------- Status helper ---------------- */
   const statusEl = document.getElementById('statusBar');
   const ts = () => new Date().toLocaleTimeString();
-
   let fadeTimer = null;
   function showStatus(text, sticky=false){
     if (!statusEl) return;
@@ -432,16 +423,15 @@ function appMain(){
   window.addEventListener('online', ()=> showStatus('Online', true));
   window.addEventListener('offline', ()=> showStatus('Offline — changes will resend', true));
 
-  /** Logger compatible with your previous addLog() calls */
   function addLog(msg, obj){
     const line = '['+ts()+'] '+msg+(obj? ' '+JSON.stringify(obj):'');
     try{ console.log(line); }catch{}
-    showStatus(msg, /*sticky=*/false);
+    showStatus(msg, false);
   }
   window.addLog = addLog;
 
   /* ---------------- Settings ---------------- */
-  const ROWS = 11; // only eleven crews
+  const ROWS = 11;
 
   /* ---------------- Helpers ---------------- */
   const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
@@ -501,7 +491,6 @@ function appMain(){
   function createGrid(){
     grid.innerHTML = '';
     for(let row=0; row<ROWS; row++){
-      // Crew Lead / Apprentice (last row: Lead only)
       const crew = document.createElement('div');
       crew.className = 'crew-label';
       crew.setAttribute('data-persistent','1');
@@ -516,7 +505,6 @@ function appMain(){
       }
       grid.appendChild(crew);
 
-      // 5 day cells
       for(let col=0; col<5; col++){
         const cell = document.createElement('div');
         cell.className = 'cell';
@@ -599,7 +587,7 @@ function appMain(){
     });
   }
 
-  /* ---------------- Persistent (recipients INCLUDED, per-user) ---------------- */
+  /* ---------------- Persistent (per-user recipients) ---------------- */
   let notifyRecipients = []; // [{name,email,enabled}]
 
   function collectPersistent(){
@@ -613,7 +601,7 @@ function appMain(){
     const ptoUrl = document.getElementById('ptoUrl')?.value?.trim() || '';
     out['PTOEmbedURL'] = ptoUrl;
 
-    // Recipients: save per user (fallback legacy key will be read but not written)
+    // Recipients per user (fallback legacy key is read but not written)
     const ukey = window.currentUser ? `NotifyRecipients:${window.currentUser}` : 'NotifyRecipients';
     out[ukey] = notifyRecipients;
 
@@ -638,7 +626,7 @@ function appMain(){
       const url = data.PTOEmbedURL;
       const input = document.getElementById('ptoUrl');
       if (input) input.value = url;
-      cachePTOUrl = url; // seed cache for PTO panel
+      cachePTOUrl = url; // seed cache
       updatePTOHint(url);
     }
 
@@ -733,7 +721,6 @@ function appMain(){
   const calBtn = document.getElementById('calendarBtn');
 
   function showCalendar(){
-    // anchor near 📅 button and keep on-screen
     const r = calBtn.getBoundingClientRect();
     calWrap.style.left = Math.max(12, Math.min(window.innerWidth - 272, r.left)).toFixed(0)+'px';
     calWrap.style.top  = (r.bottom + 8) + 'px';
@@ -908,14 +895,12 @@ function appMain(){
       recList.appendChild(row);
     });
 
-    // toggle
     recList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
       cb.onchange = () => {
         const i = Number(cb.getAttribute('data-idx'));
         notifyRecipients[i].enabled = cb.checked;
       };
     });
-    // remove
     recList.querySelectorAll('button[data-del]').forEach(btn=>{
       btn.onclick = ()=>{
         const i = Number(btn.getAttribute('data-del'));
@@ -941,9 +926,7 @@ function appMain(){
     }
     note.textContent = who;
 
-    // lock background scroll on iPad while modal open
-    document.body.style.overflow = 'hidden';
-
+    document.body.style.overflow = 'hidden'; // lock scroll
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden','false');
   }
@@ -973,17 +956,16 @@ function appMain(){
     sendBusy.style.display = 'inline';
     sendNow.disabled = true;
 
-    // Optionally remember current selection as default
     if (remember.checked){
       tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
     }
 
-    // Ask server to compute diff & send — include the SENDER
+    // Include sender for the email function
     const payload = {
       weekKey: state.key(),
       to: selected,
       note: noteEl.value || '',
-      fromUser: window.currentUser || ''     // << include sender for email subject/body
+      fromUser: window.currentUser || ''
     };
     try{
       const r = await fetch('/.netlify/functions/send-update', {
@@ -1021,7 +1003,7 @@ function appMain(){
     createGrid();
     attachCopyHandlers();
     apiLoadWeek(state.key()).then(applyWeekData);
-    apiLoadPersistent(); // loads PTOEmbedURL + saved recipients (per-user)
+    apiLoadPersistent(); // loads PTOEmbedURL + per-user recipients
     showStatus('Ready.');
   })();
 }
