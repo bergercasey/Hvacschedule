@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>HVAC Weekly Schedule</title>
+<style>
+  /* ===== Base ===== */
+  :root { --cell-b: #ccc; --pad: 16px; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: var(--pad); background:#fff; }
+  h1 { text-align: center; margin: 0 0 10px; font-weight: 700; }
+  .button-row { text-align: center; margin-bottom: 10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .button-row button { padding: 6px 10px; font-size: 14px; cursor:pointer; }
+
+  /* ===== Header ===== */
+  .weekday-header {
+    display: grid; grid-template-columns: 160px repeat(5, 1fr);
+    text-align: center; font-weight: 700; border-bottom: 1px solid var(--cell-b);
+    padding-bottom: 6px; margin-bottom: 8px;
+  }
+  .weekday-header div { padding: 4px 0; }
+
+  /* ===== Grid ===== */
+  .grid { display: grid; grid-template-columns: 160px repeat(5, 1fr); gap: 6px 4px; }
+  .crew-label { display:flex; flex-direction:column; align-items:center; font-weight:700; }
+  .crew-label input { width: 92%; margin: 2px 0; padding: 5px 6px; font-size: 15px; font-weight: 700; }
+
+  .cell { border: 1px solid var(--cell-b); padding: 2px; position: relative; min-height: 60px; background:#fff; }
+  .job-input, .helper-input { width: 100%; border: none; padding: 5px 6px; font-size: 15px; box-sizing: border-box; }
+  .job-input { resize: none; line-height:1.32; min-height: 58px; }
+  .helper-input { color: #0b62ff; }
+
+  /* PTO checks */
+  .pto-box, .helper-pto-box { position:absolute; width:16px; height:16px; cursor:pointer; appearance:auto; -webkit-appearance:auto; }
+  .pto-box         { top:4px;  right:4px;  accent-color: red; }
+  .helper-pto-box  { bottom:4px; right:4px; accent-color: #0b62ff; }
+  .highlight-red { background-color: #ffe1e1; }
+
+  /* Copy mode */
+  .copy-row-hint { outline: 2px dashed #9cc1ff; outline-offset: 2px; }
+  .copy-field-hint { box-shadow: inset 0 0 0 2px #9cc1ff; border-radius: 4px; }
+
+  /* ===== Notes (Floaters + To-Do) ===== */
+  #notesToggle { font-size: 13px; }
+  #bottomSection { display:flex; gap:10px; margin:12px auto 0; max-width:1100px; }
+  #floatersSection { flex:1; min-width:220px; }
+  #todoSection { flex:3; }
+  #todoSection .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:4px; }
+  .floater-name, .todo-job { padding:6px; font-size:15px; }
+
+  /* ===== PTO Panel ===== */
+  #ptoPanel {
+    display:none; position:fixed; inset:40px 20px 20px 20px; background:#fff; border:1px solid #ccc;
+    box-shadow:0 10px 30px rgba(0,0,0,0.15); z-index:1000; border-radius:8px; overflow:hidden;
+  }
+  #ptoPanelHeader {
+    display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #ddd; background:#fafafa;
+  }
+  #ptoFrame { width:100%; height:100%; border:0; }
+  #ptoPanelFooter { position:absolute; bottom:0; left:0; right:0; background:#fafafa; border-top:1px solid #ddd; padding:6px 10px; font-size:12px; }
+
+  /* ===== Calendar popup ===== */
+  .calendar-popup { position:absolute; top:68px; left:20px; background:#fff; border:1px solid #ccc; padding:10px; z-index:999; font-size:14px; width:260px; box-shadow:0 6px 18px rgba(0,0,0,.1) }
+  .calendar-header { display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:5px; }
+  .calendar-nav { cursor:pointer; padding:0 10px; user-select:none; }
+  .calendar-popup table { width:100%; border-collapse:collapse; }
+  .calendar-popup th, .calendar-popup td { width:14.2%; text-align:center; padding:4px; cursor:pointer; }
+  .calendar-popup th { font-weight:700; }
+  .calendar-popup td:hover { background:#eee; }
+
+  /* ===== Status bar ===== */
+  #statusBar{
+    position: fixed; right: 14px; bottom: 12px; max-width: 60vw;
+    font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color:#0a0a0a; background: rgba(250,250,250,.95);
+    border:1px solid #ddd; border-radius: 6px; padding: 6px 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08); z-index: 1200;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+  #statusBar.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+  @media print { #statusBar{ display:none !important; } }
+
+  /* ===== Auth (login) ===== */
+  #appShell { display:none; }
+  #authBar { position: absolute; top: 8px; right: 12px; font-size: 13px; color:#333; }
+  #authBar a { color:#0b62ff; text-decoration:none; cursor:pointer; }
+  #authGate {
+    position: fixed; inset:0; background:#f7f7f8; display:flex; align-items:center; justify-content:center;
+    z-index: 2000; padding: 20px;
+  }
+  .auth-card {
+    width: min(560px, 94vw); background:#fff; border:1px solid #e5e7eb; border-radius: 10px;
+    box-shadow: 0 12px 36px rgba(0,0,0,.08); padding: 22px;
+  }
+  .auth-card h2 { margin: 4px 0 12px; font-size: 18px; text-align:center; }
+  .auth-card label { display:block; font-size:13px; margin:10px 0 4px; }
+  .auth-card input[type="text"], .auth-card input[type="password"] {
+    width:100%; padding:10px; font-size:15px; border:1px solid #d1d5db; border-radius:6px;
+  }
+  .auth-error { color:#b00020; font-size:13px; margin-top:10px; min-height: 18px; }
+
+  /* ===== Send Update modal ===== */
+  #sendModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: none; align-items: center; justify-content: center; z-index: 1500; padding:16px; box-sizing:border-box;
+  }
+  #sendModal .card {
+    width: min(600px, 94vw);
+    max-height: min(70vh, 560px);
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.18);
+    padding: 16px; display:flex; flex-direction:column; box-sizing:border-box;
+  }
+  #sendModal h3 { margin: 4px 0 10px; font-size: 18px; }
+  .rec-list { display: grid; grid-template-columns: 1fr; gap: 6px; overflow:auto; border:1px solid #eee; padding:10px 14px; border-radius:6px; }
+  .rec-item { display:flex; align-items:center; gap:10px; font-size:14px; padding:6px 4px; }
+  .rec-item input[type="checkbox"] { width:18px; height:18px; margin:0 10px 0 0; appearance: auto; -webkit-appearance: checkbox; }
+  .rec-item span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rec-item button { margin-left:10px; padding:4px 10px; }
+  .rec-add { display:flex; gap:6px; margin-top:8px; }
+  .rec-add input { flex:1; padding:8px; font-size:14px; }
+  .send-actions { display:flex; justify-content:space-between; align-items:center; margin-top:12px; }
+  .send-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
+  .send-note { width:100%; min-height:64px; font-size:14px; padding:8px; }
+  @media print { #sendModal { display: none !important; } }
+</style>
+</head>
+<body>
+
+  <!-- Top-right signed-in bar -->
+  <div id="authBar" style="display:none;">
+    <span id="authUser"></span> · <a id="authLogout">Log out</a>
+  </div>
+
+  <!-- Login Gate -->
+  <div id="authGate" aria-modal="true" role="dialog" style="display:flex;">
+    <div class="auth-card">
+      <h2>Sign in to Schedule</h2>
+      <form id="authForm">
+        <label for="authUserField">Username</label>
+        <input id="authUserField" name="username" type="text" autocomplete="username" required />
+        <label for="authPassField">Password</label>
+        <input id="authPassField" name="password" type="password" autocomplete="current-password" required />
+        <div class="auth-actions" style="padding:0 16px 0 10px; gap:12px; display:flex; align-items:center; justify-content:space-between; margin-top:14px;">
+          <label style="font-size:12px; display:flex; align-items:center; margin:0;">
+            <input type="checkbox" id="authRemember" style="width:18px;height:18px;margin-right:8px;"/>
+            Remember me
+          </label>
+          <button type="submit" style="padding:8px 14px; height:40px; border-radius:8px; background:#0b62ff; color:#fff; border:none; font-weight:600; cursor:pointer;">
+            Sign in
+          </button>
+        </div>
+        <div class="auth-error" id="authError"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- App shell (hidden until auth OK) -->
+  <div id="appShell" aria-hidden="true">
+
+    <h1>HVAC Weekly Schedule</h1>
+
+    <div class="button-row">
+      <button id="calendarBtn">📅</button>
+      <button id="prevWeekBtn">Previous Week</button>
+      <button id="todayBtn">Today</button>
+      <button id="nextWeekBtn">Next Week</button>
+      <button id="ptoBtn">PTO Calendar</button>
+      <button id="notesToggle">Hide Notes</button>
+      <button id="sendUpdateBtn">Send Update</button>
+      <button id="printBtn">Print</button>
+    </div>
+
+    <div class="weekday-header" id="weekdayHeader"></div>
+    <div class="grid" id="week-grid"></div>
+    <div id="calendarContainer" class="calendar-popup" style="display:none;"></div>
+
+    <!-- PTO Calendar Panel -->
+    <div id="ptoPanel" aria-hidden="true">
+      <div id="ptoPanelHeader">
+        <div><strong>PTO Calendar</strong> <span id="ptoHint" style="font-size:12px;color:#666;"></span></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button id="ptoOpenInNew" title="Open in new tab">Open ↗</button>
+          <button id="ptoClose">Close</button>
+        </div>
+      </div>
+      <iframe id="ptoFrame" src="about:blank" loading="lazy"></iframe>
+      <div id="ptoPanelFooter">
+        Tip: view the PTO calendar, then tick the red/blue PTO boxes in the grid for who’s out.
+      </div>
+    </div>
+
+    <!-- Notes: Floaters + To-Do -->
+    <div id="bottomSection" data-persistent="1">
+      <div id="floatersSection">
+        <h3 style="text-align:center;margin:4px 0;">Floaters</h3>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 1"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 2"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 3"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 4"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 5"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 6"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 7"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 8"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 9"></div>
+          <div style="display:flex; align-items:center; gap:4px;"><input type="checkbox" class="floater-check"><input type="text" class="floater-name" placeholder="Floater 10"></div>
+        </div>
+
+        <!-- PTO Calendar Embed URL (saved persistently) -->
+        <div style="margin-top:10px; border-top:1px solid #eee; padding-top:8px;">
+          <label for="ptoUrl" style="font-size:13px;display:block;margin-bottom:4px;">
+            PTO Calendar Embed URL (Google or Outlook)
+          </label>
+          <input id="ptoUrl" type="url" placeholder="https://calendar.google.com/calendar/embed?..." style="width:100%; padding:6px; font-size:14px;">
+          <div style="font-size:12px;color:#555;margin-top:4px;">
+            Paste the read-only embed link for your PTO calendar. Click “PTO Calendar” above to view it in-app.
+          </div>
+        </div>
+      </div>
+
+      <div id="todoSection">
+        <h3 style="text-align:center;margin:4px 0;">Need to be done jobs</h3>
+        <div class="grid2">
+          <input type="text" class="todo-job" placeholder="Job 1">
+          <input type="text" class="todo-job" placeholder="Job 2">
+          <input type="text" class="todo-job" placeholder="Job 3">
+          <input type="text" class="todo-job" placeholder="Job 4">
+          <input type="text" class="todo-job" placeholder="Job 5">
+          <input type="text" class="todo-job" placeholder="Job 6">
+          <input type="text" class="todo-job" placeholder="Job 7">
+          <input type="text" class="todo-job" placeholder="Job 8">
+          <input type="text" class="todo-job" placeholder="Job 9">
+          <input type="text" class="todo-job" placeholder="Job 10">
+          <input type="text" class="todo-job" placeholder="Job 11">
+          <input type="text" class="todo-job" placeholder="Job 12">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tiny floating status bar -->
+    <div id="statusBar" aria-live="polite" aria-atomic="true" class="hidden">Ready.</div>
+  </div>
+
+  <!-- Send Update modal -->
+  <div id="sendModal" aria-hidden="true">
+    <div class="card" role="dialog" aria-modal="true">
+      <h3>Send Update</h3>
+
+      <div style="font-size:13px; color:#555; margin-bottom:6px;">
+        Choose who should get an email about changes for the currently displayed week.
+      </div>
+
+      <div class="rec-list" id="recList"></div>
+
+      <div class="rec-add">
+        <input id="recName" type="text" placeholder="Name (optional)" />
+        <input id="recEmail" type="email" placeholder="email@example.com" />
+        <button id="recAddBtn">Add</button>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label style="font-size:13px; display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="rememberRecipients" checked />
+          Remember this selection as default next time
+        </label>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label style="font-size:13px;">Optional note to include in email:</label>
+        <textarea id="sendNote" class="send-note" placeholder="e.g., Moved Crew 3 to Main St on Wed; added helper PTO."></textarea>
+      </div>
+
+      <div class="send-actions">
+        <button id="sendCancelBtn">Cancel</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span id="sendBusy" style="font-size:12px; color:#666; display:none;">Sending…</span>
+          <button id="sendNowBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* =========================
+   GLOBAL USER CONTEXT
+   ========================= */
+window.currentUser = null;      // set after auth
+let loadedWeekSnapshot = {};    // holds what we loaded for this week
+
+/* =========================
+   AUTH ENDPOINTS (Netlify Functions)
+   ========================= */
+const Auth = (() => {
+  async function me(){
+    try{
+      const r = await fetch('/.netlify/functions/auth-me', { credentials:'include' });
+      if (!r.ok) return { ok:false };
+      const j = await r.json().catch(()=> ({}));
+      return j && j.ok ? j : { ok:false };
+    }catch{ return { ok:false }; }
+  }
+  async function login(username, password, remember){
+    const r = await fetch('/.netlify/functions/login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body: JSON.stringify({ username, password, remember: !!remember })
+    });
+    const j = await r.json().catch(()=> ({}));
+    return j && j.ok ? j : { ok:false, error: j && j.error || 'Login failed' };
+  }
+  async function logout(){
+    try{ await fetch('/.netlify/functions/logout', { method:'POST', credentials:'include' }); }catch{}
+    return { ok:true };
+  }
+  return { me, login, logout };
+})();
+
+/* =========================
+   LOGIN GATE
+   ========================= */
+(async function authGate(){
+  const gate   = document.getElementById('authGate');
+  const app    = document.getElementById('appShell');
+  const aBar   = document.getElementById('authBar');
+  const aUser  = document.getElementById('authUser');
+  const aLogout= document.getElementById('authLogout');
+  const form   = document.getElementById('authForm');
+  const errEl  = document.getElementById('authError');
+
+  function showError(msg){ errEl.textContent = msg || 'Invalid username or password.'; }
+  function clearError(){ errEl.textContent = ''; }
+
+  // Try existing session
+  const session = await Auth.me();
+  if (session.ok){
+    window.currentUser = (session.user?.username || 'user');  // set global
+    aUser.textContent = `Signed in as ${window.currentUser}`;
+    aBar.style.display = 'block';
+    gate.style.display = 'none';
+    app.style.display  = 'block';
+    app.removeAttribute('aria-hidden');
+    document.body.style.paddingTop = '28px';
+    appMain();
+    aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
+    return;
+  }
+
+  // No session → show login form
+  gate.style.display = 'flex';
+  app.style.display  = 'none';
+  aBar.style.display = 'none';
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    clearError();
+    const username = document.getElementById('authUserField').value.trim();
+    const password = document.getElementById('authPassField').value;
+    const remember = document.getElementById('authRemember').checked;
+    if (!username || !password){ return showError('Enter username and password.'); }
+    const res = await Auth.login(username, password, remember);
+    if (!res.ok){ return showError(res.error || 'Login failed.'); }
+
+    window.currentUser = (res.user?.username || username);   // set global
+    aUser.textContent = `Signed in as ${window.currentUser}`;
+    aBar.style.display = 'block';
+    gate.style.display = 'none';
+    app.style.display  = 'block';
+    app.removeAttribute('aria-hidden');
+    document.body.style.paddingTop = '28px';
+    aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
+    appMain();
+  }, { passive:false });
+})();
+
+/* =========================
+   HVAC — controller (wrapped in appMain())
+   ========================= */
+function appMain(){
+  /* ---------------- Status helper ---------------- */
+  const statusEl = document.getElementById('statusBar');
+  const ts = () => new Date().toLocaleTimeString();
+  let fadeTimer = null;
+  function showStatus(text, sticky=false){
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.classList.remove('hidden');
+    statusEl.style.background = 'rgba(228,248,228,.95)';
+    setTimeout(()=>{ statusEl.style.background = 'rgba(250,250,250,.95)'; }, 150);
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(()=>{
+      statusEl.classList.add('hidden');
+      statusEl.textContent = 'Ready.';
+    }, sticky ? 8000 : 4200);
+  }
+  function addLog(msg, obj){
+    const line = '['+ts()+'] '+msg+(obj? ' '+JSON.stringify(obj):'');
+    try{ console.log(line); }catch{}
+    showStatus(msg, false);
+  }
+  window.addLog = addLog;
+
+  /* ---------------- Settings ---------------- */
+  const ROWS = 11;
+
+  /* ---------------- Helpers ---------------- */
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+  const pad2 = n => String(n).padStart(2,'0');
+
+  function mondayOf(d){ const x=new Date(d); x.setHours(0,0,0,0); const wd=x.getDay(); const diff=(wd===0?-6:1-wd); x.setDate(x.getDate()+diff); return x; }
+  function isoWeekKeyFromDate(d){
+    const x=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    x.setUTCDate(x.getUTCDate()+4-(x.getUTCDay()||7));
+    const y0=new Date(Date.UTC(x.getUTCFullYear(),0,1));
+    const wk=Math.ceil((((x-y0)/86400000)+1)/7);
+    return `${x.getUTCFullYear()}-W${String(wk).padStart(2,'0')}`;
+  }
+  function fmtHeader(d){ return `${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getMonth()+1}/${d.getDate()}`; }
+
+  /* ---------------- State ---------------- */
+  const state = {
+    monday: (()=>{ const s=localStorage.getItem('displayedMonday'); return s? new Date(s) : mondayOf(new Date()); })(),
+    setMonday(d){
+      this.monday = mondayOf(d);
+      localStorage.setItem('displayedMonday', this.monday.toISOString());
+      renderHeader(this.monday);
+      loadWeekFor(this.monday);
+    },
+    key(){ return isoWeekKeyFromDate(this.monday); }
+  };
+  window.hvacSetWeek = (input)=> { const d = input instanceof Date ? input : new Date(input); state.setMonday(d); };
+
+  /* ---------------- UI Elements ---------------- */
+  const header = document.getElementById('weekdayHeader');
+  const grid   = document.getElementById('week-grid');
+  const notes  = document.getElementById('bottomSection');
+  const toggle = document.getElementById('notesToggle');
+
+  const ptoPanel = document.getElementById('ptoPanel');
+  const ptoFrame = document.getElementById('ptoFrame');
+  const ptoClose = document.getElementById('ptoClose');
+  const ptoOpenInNew = document.getElementById('ptoOpenInNew');
+  const ptoHint = document.getElementById('ptoHint');
+
+  toggle.addEventListener('click', ()=>{
+    const isHidden = notes.style.display === 'none';
+    notes.style.display = isHidden ? '' : 'none';
+    toggle.textContent = isHidden ? 'Hide Notes' : 'Show Notes';
+    addLog('notes-toggle', {visible: isHidden});
+  });
+
+  function renderHeader(startDate){
+    header.innerHTML = '<div>Crew</div>';
+    for(let i=0;i<5;i++){
+      const d=new Date(startDate); d.setDate(startDate.getDate()+i);
+      const div=document.createElement('div'); div.textContent = fmtHeader(d);
+      header.appendChild(div);
+    }
+  }
+
+  function createGrid(){
+    grid.innerHTML = '';
+    for(let row=0; row<ROWS; row++){
+      // Crew Lead / Apprentice (last row: Lead only)
+      const crew = document.createElement('div');
+      crew.className = 'crew-label';
+      crew.setAttribute('data-persistent','1');
+
+      if (row === ROWS - 1) {
+        crew.innerHTML = `<input type="text" class="lead-input" placeholder="Lead">`;
+      } else {
+        crew.innerHTML = `
+          <input type="text" class="lead-input" placeholder="Lead">
+          <input type="text" class="apprentice-input" placeholder="Apprentice">
+        `;
+      }
+      grid.appendChild(crew);
+
+      // 5 day cells
+      for(let col=0; col<5; col++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.row = row;
+        cell.dataset.col = col;
+
+        const job = document.createElement('textarea');
+        job.className = 'job-input';
+        job.rows = 2;
+        job.placeholder = (col===0 ? 'Job' : '');
+        job.dataset.row = row; job.dataset.col = col; job.dataset.field='job';
+        cell.appendChild(job);
+
+        const helper = document.createElement('input');
+        helper.className = 'helper-input';
+        helper.placeholder = (col===0 ? 'Helper' : '');
+        helper.dataset.row = row; helper.dataset.col = col; helper.dataset.field='helper';
+        cell.appendChild(helper);
+
+        const pto = document.createElement('input');
+        pto.type = 'checkbox';
+        pto.className = 'pto-box';
+        pto.addEventListener('change', ()=>{
+          cell.classList.toggle('highlight-red', pto.checked);
+        });
+        cell.appendChild(pto);
+
+        const helperPto = document.createElement('input');
+        helperPto.type = 'checkbox';
+        helperPto.className = 'helper-pto-box'; // BLUE check, no shading
+        cell.appendChild(helperPto);
+
+        grid.appendChild(cell);
+      }
+    }
+  }
+
+  /* ---------------- Clear/Collect/Apply ---------------- */
+  function clearWeekGrid(){
+    grid.querySelectorAll('.cell .job-input').forEach(el => el.value='');
+    grid.querySelectorAll('.cell .helper-input').forEach(el => el.value='');
+    grid.querySelectorAll('.cell .pto-box, .cell .helper-pto-box').forEach(cb => {
+      const wasLead = cb.classList.contains('pto-box') && cb.checked;
+      cb.checked=false;
+      if (wasLead) cb.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+  }
+
+  function collectWeekFull(){
+    const jobs   = Array.from(grid.querySelectorAll('.job-input'));
+    const helps  = Array.from(grid.querySelectorAll('.helper-input'));
+    const pto    = Array.from(grid.querySelectorAll('.pto-box'));
+    const hpto   = Array.from(grid.querySelectorAll('.helper-pto-box'));
+    const out={}, max=Math.max(jobs.length, helps.length, pto.length, hpto.length);
+    for (let i=0;i<max;i++){
+      const row=Math.floor(i/5)+1, day=DAYS[i%5], r=pad2(row), base=`${day}:${r}`;
+      out[`${base}:job`]       = jobs[i]  ? (jobs[i].value  || '') : '';
+      out[`${base}:helper`]    = helps[i] ? (helps[i].value || '') : '';
+      out[`${base}:pto`]       = !!(pto[i]   && pto[i].checked);
+      out[`${base}:helperPto`] = !!(hpto[i]  && hpto[i].checked);
+    }
+    return out;
+  }
+
+  function applyWeekData(data){
+    clearWeekGrid();
+    const jobs   = Array.from(grid.querySelectorAll('.job-input'));
+    const helps  = Array.from(grid.querySelectorAll('.helper-input'));
+    const pto    = Array.from(grid.querySelectorAll('.pto-box'));
+    const hpto   = Array.from(grid.querySelectorAll('.helper-pto-box'));
+    Object.entries(data||{}).forEach(([k,v])=>{
+      const m=k.match(/^(Mon|Tue|Wed|Thu|Fri):(\d{2}):(job|helper|pto|helperPto)$/); if(!m) return;
+      const idx = (parseInt(m[2],10)-1)*5 + (['Mon','Tue','Wed','Thu','Fri'].indexOf(m[1]));
+      if (m[3]==='job'      && jobs[idx])  jobs[idx].value   = String(v||'');
+      if (m[3]==='helper'   && helps[idx]) helps[idx].value  = String(v||'');
+      if (m[3]==='pto'      && pto[idx])  { pto[idx].checked = !!v; pto[idx].dispatchEvent(new Event('change',{bubbles:true})); }
+      if (m[3]==='helperPto'&& hpto[idx]) { hpto[idx].checked= !!v; }
+    });
+  }
+
+  /* ---------------- Persistent (per-user recipients) ---------------- */
+  let notifyRecipients = []; // [{name,email,enabled}]
+
+  function collectPersistent(){
+    const out={};
+    grid.querySelectorAll('.lead-input').forEach((el,i)=> out[`Lead:${pad2(i+1)}`]=el.value||'');
+    grid.querySelectorAll('.apprentice-input').forEach((el,i)=> out[`Apprentice:${pad2(i+1)}`]=el.value||'');
+    document.querySelectorAll('.floater-name').forEach((el,i)=> out[`Floater:${pad2(i+1)}`]=el.value||'');
+    document.querySelectorAll('.todo-job').forEach((el,i)=> out[`Todo:${pad2(i+1)}`]=el.value||'');
+
+    // PTO calendar embed URL
+    const ptoUrl = document.getElementById('ptoUrl')?.value?.trim() || '';
+    out['PTOEmbedURL'] = ptoUrl;
+
+    // Recipients per user (fallback legacy key is read but not written)
+    const ukey = window.currentUser ? `NotifyRecipients:${window.currentUser}` : 'NotifyRecipients';
+    out[ukey] = notifyRecipients;
+
+    return out;
+  }
+
+  function applyPersistent(data){
+    const put=(sel,prefix,root=document)=> {
+      const list = Array.from(root.querySelectorAll(sel));
+      Object.entries(data||{}).forEach(([k,v])=>{
+        const m=k.match(new RegExp(`^${prefix}:(\\d{2})$`)); if(!m) return;
+        const idx=parseInt(m[1],10)-1; if (list[idx]) list[idx].value = String(v||'');
+      });
+    };
+    put('.lead-input','Lead',grid);
+    put('.apprentice-input','Apprentice',grid);
+    put('.floater-name','Floater',document);
+    put('.todo-job','Todo',document);
+
+    // PTO URL
+    if (typeof data?.PTOEmbedURL === 'string') {
+      const url = data.PTOEmbedURL;
+      const input = document.getElementById('ptoUrl');
+      if (input) input.value = url;
+      cachePTOUrl = url; // seed cache
+      updatePTOHint(url);
+    }
+
+    // Recipients (prefer per-user; fallback to legacy shared on first load)
+    let loaded = [];
+    const perUserKey = window.currentUser ? `NotifyRecipients:${window.currentUser}` : null;
+    if (perUserKey && Array.isArray(data?.[perUserKey])) {
+      loaded = data[perUserKey];
+    } else if (Array.isArray(data?.NotifyRecipients)) {
+      loaded = data.NotifyRecipients; // legacy shared list
+    }
+    notifyRecipients = (loaded || []).map(r => ({
+      name: String(r?.name||'').trim(),
+      email: String(r?.email||'').trim(),
+      enabled: !!r?.enabled
+    })).filter(r => r.email);
+  }
+
+  /* ---------------- Netlify Endpoints ---------------- */
+  async function apiLoadWeek(key){
+    const r = await fetch(`/.netlify/functions/load-week?weekKey=${encodeURIComponent(key)}`, { credentials:'include' });
+    const j = await r.json().catch(()=> ({}));
+    addLog('load-week', {status:r.status, ok:r.ok, key});
+    return (r.ok && j && j.ok) ? (j.data||{}) : {};
+  }
+  async function apiSaveWeek(key, data){
+    const r = await fetch('/.netlify/functions/save-week', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body: JSON.stringify({ weekKey:key, data })
+    });
+    const t = await r.text().catch(()=> ''); addLog('save-week', {status:r.status, ok:r.ok, body:t.slice(0,140)});
+  }
+  async function apiSavePersistent(data){
+    try{
+      const r = await fetch('/.netlify/functions/save-persistent', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify({ data })
+      });
+      addLog('save-persistent', {status:r.status, ok:r.ok});
+    }catch{}
+  }
+  async function apiLoadPersistent(){
+    try{
+      const r = await fetch('/.netlify/functions/load-persistent', { credentials:'include' });
+      const j = await r.json().catch(()=> ({}));
+      if (j && j.ok) applyPersistent(j.data||{});
+      addLog('load-persistent', {status:r.status, ok:r.ok});
+    }catch{}
+  }
+
+  /* ---------------- Autosave (debounced) ---------------- */
+  let tWeek=null, tPersist=null;
+  const deb = (slot, fn)=>{ clearTimeout(slot?.id); const id=setTimeout(fn, 650); return {id}; };
+
+  grid.addEventListener('input', (e)=>{
+    const el=e.target;
+    if (el.classList.contains('job-input') || el.classList.contains('helper-input')) {
+      tWeek = deb(tWeek, ()=> apiSaveWeek(state.key(), collectWeekFull()));
+    }
+    if (el.classList.contains('lead-input') || el.classList.contains('apprentice-input')) {
+      tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+    }
+  }, {passive:true});
+
+  grid.addEventListener('change', (e)=>{
+    const el=e.target;
+    if (el.classList.contains('pto-box') || el.classList.contains('helper-pto-box')) {
+      tWeek = deb(tWeek, ()=> apiSaveWeek(state.key(), collectWeekFull()));
+    }
+  }, {passive:true});
+
+  document.querySelectorAll('.floater-name, .todo-job').forEach(el=>{
+    el.addEventListener('input', ()=> { tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent())); }, {passive:true});
+  });
+
+  // Save PTO embed URL on change
+  let cachePTOUrl = '';
+  const ptoUrlEl = document.getElementById('ptoUrl');
+  if (ptoUrlEl){
+    ptoUrlEl.addEventListener('change', ()=>{
+      cachePTOUrl = ptoUrlEl.value.trim();
+      tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+      updatePTOHint(cachePTOUrl);
+    }, {passive:true});
+  }
+
+  /* ---------------- Calendar (date picker) ---------------- */
+  let calOffset = 0;
+  const calWrap = document.getElementById('calendarContainer');
+
+  function showCalendar(){
+    calWrap.style.display='block';
+    renderCalendar(state.monday);
+    const outside = (e)=>{ if (!calWrap.contains(e.target) && e.target.id !== 'calendarBtn'){ hideCalendar(); } };
+    document.addEventListener('click', outside, {capture:true, once:true});
+  }
+  function hideCalendar(){ calWrap.style.display='none'; calOffset=0; }
+  window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') hideCalendar(); });
+  window.addEventListener('resize', hideCalendar);
+
+  function renderCalendar(referenceDate){
+    const ref = new Date(referenceDate); ref.setMonth(ref.getMonth()+calOffset);
+    const y=ref.getFullYear(), m=ref.getMonth();
+    const first=new Date(y,m,1), last=new Date(y,m+1,0);
+    const monthName = ref.toLocaleString('default',{month:'long'});
+    let html = `<div class="calendar-header">
+      <span class="calendar-nav" id="calPrev">‹</span>
+      <span>${monthName} ${y}</span>
+      <span class="calendar-nav" id="calNext">›</span>
+    </div><table><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr><tr>`;
+    for (let i=0;i<first.getDay();i++) html += "<td></td>";
+    for (let d=1; d<=last.getDate(); d++){
+      const dt = new Date(y,m,d);
+      html += `<td data-ymd="${y}-${m+1}-${d}">${d}</td>`;
+      if (dt.getDay()===6) html += "</tr><tr>";
+    }
+    html += "</tr></table>";
+    calWrap.innerHTML = html;
+    document.getElementById('calPrev').onclick = ()=>{ calOffset -= 1; renderCalendar(referenceDate); };
+    document.getElementById('calNext').onclick = ()=>{ calOffset += 1; renderCalendar(referenceDate); };
+    calWrap.querySelectorAll('td[data-ymd]').forEach(td=>{
+      td.onclick = ()=>{
+        const [Y,M,D] = td.getAttribute('data-ymd').split('-').map(Number);
+        hvacSetWeek(new Date(Y, M-1, D));
+        hideCalendar();
+      };
+    });
+  }
+
+  /* ---------------- PTO Calendar embed handling ---------------- */
+  function updatePTOHint(url){
+    if (!url) { ptoHint.textContent = ' — add an Embed URL in Notes'; return; }
+    let provider = '';
+    if (url.includes('calendar.google.com')) provider = 'Google';
+    else if (url.includes('outlook.office.com') || url.includes('outlook.live.com')) provider = 'Outlook';
+    ptoHint.textContent = provider ? ` — ${provider} embed` : '';
+  }
+
+  function openPtoPanel(){
+    const url = cachePTOUrl || document.getElementById('ptoUrl')?.value?.trim();
+    if (!url){
+      alert('Add the PTO calendar Embed URL in the Notes panel first.');
+      return;
+    }
+    ptoFrame.src = url;
+    ptoOpenInNew.onclick = ()=> window.open(url, '_blank');
+    ptoPanel.style.display = 'block';
+    ptoPanel.setAttribute('aria-hidden','false');
+    addLog('open-pto');
+  }
+  function closePtoPanel(){
+    ptoPanel.style.display = 'none';
+    ptoPanel.setAttribute('aria-hidden','true');
+    ptoFrame.src = 'about:blank';
+    addLog('close-pto');
+  }
+
+  document.getElementById('ptoBtn').onclick = openPtoPanel;
+  document.getElementById('ptoClose').onclick = closePtoPanel;
+  window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closePtoPanel(); });
+
+  /* ---------------- Navigation Buttons ---------------- */
+  document.getElementById('calendarBtn').onclick = ()=>{
+    if (calWrap.style.display==='none') showCalendar(); else hideCalendar();
+  };
+  document.getElementById('prevWeekBtn').onclick = ()=>{ hideCalendar(); clearWeekGrid(); hvacSetWeek(new Date(state.monday.getTime() - 7*24*60*60*1000)); };
+  document.getElementById('nextWeekBtn').onclick = ()=>{ hideCalendar(); clearWeekGrid(); hvacSetWeek(new Date(state.monday.getTime() + 7*24*60*60*1000)); };
+  document.getElementById('todayBtn').onclick    = ()=>{ hideCalendar(); clearWeekGrid(); hvacSetWeek(new Date()); };
+  document.getElementById('printBtn').onclick    = ()=> window.print();
+
+  /* ---------------- Tap-copy & Drag-paste (row only) ---------------- */
+  let copyActive = false;
+  let copyField = null;    // 'job' | 'helper'
+  let copyValue = '';
+  let copyRow = -1;
+  let visitedCols = new Set();
+  let lastPointerDown = 0;
+
+  function startCopyMode(fromEl){
+    copyActive = true;
+    copyField = fromEl.dataset.field;
+    copyValue = fromEl.value || '';
+    copyRow   = parseInt(fromEl.dataset.row,10);
+    visitedCols.clear();
+    grid.querySelectorAll(`.cell[data-row="${copyRow}"]`).forEach(c=> c.classList.add('copy-row-hint'));
+    fromEl.classList.add('copy-field-hint');
+    addLog('copy-start', {row: copyRow, field: copyField});
+  }
+  function endCopyMode(){
+    copyActive = false; copyField=null; copyValue=''; copyRow=-1; visitedCols.clear();
+    grid.querySelectorAll('.copy-row-hint').forEach(c=> c.classList.remove('copy-row-hint'));
+    grid.querySelectorAll('.copy-field-hint').forEach(el=> el.classList.remove('copy-field-hint'));
+    addLog('copy-end');
+  }
+  function pasteAtPoint(clientX, clientY){
+    if (!copyActive) return;
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return;
+    const cell = el.closest?.('.cell');
+    if (!cell) return;
+    const row = parseInt(cell.dataset.row,10);
+    if (row !== copyRow) return;
+    const col = parseInt(cell.dataset.col,10);
+    if (visitedCols.has(col)) return;
+    visitedCols.add(col);
+    const target = cell.querySelector(copyField === 'job' ? '.job-input' : '.helper-input');
+    if (target){
+      target.value = copyValue;
+      target.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  }
+  function attachCopyHandlers(){
+    const gridEl = grid;
+    gridEl.addEventListener('pointerdown', (e)=>{
+      const t = e.target;
+      if (!(t.classList.contains('job-input') || t.classList.contains('helper-input'))) return;
+      const now = Date.now();
+      if (now - lastPointerDown < 350){
+        e.preventDefault();
+        startCopyMode(t);
+        visitedCols.add(parseInt(t.dataset.col,10));
+      }
+      lastPointerDown = now;
+    }, {passive:false});
+    gridEl.addEventListener('pointermove', (e)=>{ if (copyActive) pasteAtPoint(e.clientX, e.clientY); }, {passive:true});
+    const endAll = ()=> { if (copyActive) endCopyMode(); };
+    gridEl.addEventListener('pointerup', endAll, {passive:true});
+    gridEl.addEventListener('pointercancel', endAll, {passive:true});
+    window.addEventListener('blur', endAll);
+    window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') endCopyMode(); });
+  }
+
+  /* ---------------- Send Update (Email) ---------------- */
+  const sendBtn = document.getElementById('sendUpdateBtn');
+  const modal   = document.getElementById('sendModal');
+  const recList = document.getElementById('recList');
+  const recName = document.getElementById('recName');
+  const recEmail= document.getElementById('recEmail');
+  const recAdd  = document.getElementById('recAddBtn');
+  const remember= document.getElementById('rememberRecipients');
+  const noteEl  = document.getElementById('sendNote');
+  const sendNow = document.getElementById('sendNowBtn');
+  const sendCancel = document.getElementById('sendCancelBtn');
+  const sendBusy = document.getElementById('sendBusy');
+
+  function renderRecList(){
+    if (!notifyRecipients.length){
+      recList.innerHTML = `<div style="font-size:13px;color:#666;">No saved recipients yet. Add a name/email below.</div>`;
+      return;
+    }
+    recList.innerHTML = '';
+    notifyRecipients.forEach((r, idx)=>{
+      const row = document.createElement('label');
+      row.className = 'rec-item';
+      row.innerHTML = `
+        <input type="checkbox" ${r.enabled ? 'checked':''} data-idx="${idx}" />
+        <span>${r.name ? r.name+' ' : ''}<small>&lt;${r.email}&gt;</small></span>
+        <button data-del="${idx}" style="margin-left:auto;font-size:12px;">Remove</button>
+      `;
+      recList.appendChild(row);
+    });
+
+    recList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+      cb.onchange = () => {
+        const i = Number(cb.getAttribute('data-idx'));
+        notifyRecipients[i].enabled = cb.checked;
+      };
+    });
+    recList.querySelectorAll('button[data-del]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const i = Number(btn.getAttribute('data-del'));
+        notifyRecipients.splice(i,1);
+        renderRecList();
+        tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+      };
+    });
+  }
+
+  function openSendModal(){
+    renderRecList();
+    noteEl.value = '';
+
+    // Show who is sending
+    const who = window.currentUser ? `Sending as ${window.currentUser}` : '';
+    let note = modal.querySelector('.sending-as');
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'sending-as';
+      note.style.cssText = 'font-size:12px;color:#666;margin:-4px 0 8px;';
+      modal.querySelector('.card').insertBefore(note, modal.querySelector('h3').nextSibling);
+    }
+    note.textContent = who;
+
+    document.body.style.overflow = 'hidden'; // lock scroll
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden','false');
+  }
+  function closeSendModal(){
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden','true');
+    document.body.style.overflow = ''; // unlock scroll
+  }
+  window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeSendModal(); });
+
+  recAdd.onclick = ()=>{
+    const name = recName.value.trim();
+    const email= recEmail.value.trim();
+    if (!email) { alert('Enter an email address'); return; }
+    notifyRecipients.push({ name, email, enabled:true });
+    recName.value = ''; recEmail.value='';
+    renderRecList();
+    tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent())); // save list (per-user)
+  };
+
+  // Collect crew names for labeling diffs
+  function collectCrewNames(){
+    const out = {}; // { "01": {lead, apprentice, label} }
+    const leads = Array.from(document.querySelectorAll('#week-grid .lead-input'));
+    const apps  = Array.from(document.querySelectorAll('#week-grid .apprentice-input'));
+    const rows = Math.max(leads.length, apps.length);
+    for (let i = 0; i < rows; i++){
+      const num = String(i+1).padStart(2,'0');
+      const lead = (leads[i]?.value || '').trim();
+      const appr = (apps[i]?.value  || '').trim();
+      const label =
+        (lead && appr) ? `${lead} / ${appr}` :
+        (lead) ? lead :
+        (appr) ? appr : '';
+      out[num] = { lead, apprentice: appr, label };
+    }
+    return out;
+  }
+
+  sendBtn.onclick = openSendModal;
+  sendCancel.onclick = closeSendModal;
+
+  sendNow.onclick = async ()=>{
+    const selected = notifyRecipients.filter(r=> r.enabled).map(r=> r.email);
+    if (!selected.length){ alert('Select at least one recipient.'); return; }
+    sendBusy.style.display = 'inline';
+    sendNow.disabled = true;
+
+    if (remember.checked){
+      tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
+    }
+
+    // Include sender, before/after snapshot, and crew names
+    const payload = {
+      weekKey: state.key(),
+      to: selected,
+      note: noteEl.value || '',
+      fromUser: window.currentUser || '',
+      before: loadedWeekSnapshot || {},
+      after:  collectWeekFull(),
+      crewNames: collectCrewNames()
+    };
+    try{
+      const r = await fetch('/.netlify/functions/send-update', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify(payload)
+      });
+      const t = await r.json().catch(()=> ({}));
+      if (r.ok && t.ok){
+        addLog('email-update-sent', {to:selected.length, week: payload.weekKey, from: payload.fromUser});
+        showStatus('Update sent.');
+        closeSendModal();
+      } else {
+        alert('Send failed: ' + (t.error || r.status));
+      }
+    } catch(e){
+      alert('Network error while sending.');
+    } finally {
+      sendBusy.style.display = 'none';
+      sendNow.disabled = false;
+    }
+  };
+
+  /* ---------------- Load/Refresh ---------------- */
+  async function loadWeekFor(monday){
+    clearWeekGrid();
+    const data = await apiLoadWeek(isoWeekKeyFromDate(monday));
+    loadedWeekSnapshot = JSON.parse(JSON.stringify(data || {})); // deep clone for diff
+    applyWeekData(data);
+  }
+
+  /* ---------------- Init ---------------- */
+  (function init(){
+    renderHeader(state.monday);
+    createGrid();
+    attachCopyHandlers();
+    apiLoadWeek(state.key()).then(d=>{
+      loadedWeekSnapshot = JSON.parse(JSON.stringify(d || {}));
+      applyWeekData(d);
+    });
+    apiLoadPersistent(); // loads PTOEmbedURL + per-user recipients
+    showStatus('Ready.');
+  })();
+}
+</script>
+
+</body>
+</html>
