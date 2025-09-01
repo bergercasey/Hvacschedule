@@ -232,6 +232,27 @@
   box-sizing: border-box;
 }
 .auth-actions { gap: 10px; }
+/* Login row right-gutter + comfy checkbox */
+#authGate .auth-card .auth-actions{
+  padding-right: 12px;       /* ← adds space from the right card edge */
+  padding-left: 6px;         /* small left breathing room too */
+  gap: 10px;                 /* space between label and button */
+  box-sizing: border-box;
+}
+
+#authGate .auth-card .auth-actions label input[type="checkbox"]{
+  width: 18px; height: 18px;
+  margin-right: 8px;         /* space between the bubble and “Remember me” text */
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+}
+
+/* (optional) keep the whole card a touch narrower so it feels balanced */
+#authGate .auth-card{
+  width: 94vw !important;
+  max-width: 560px !important;   /* tweak to taste */
+  padding: 20px 22px !important;
+}
 
 </style>
 </head>
