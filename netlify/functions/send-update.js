@@ -1,4 +1,4 @@
-// netlify/functions/send-update.js  (SMTP via Outlook/Gmail)
+// netlify/functions/send-update.js  (SMTP via Gmail)
 const { getStore } = require('@netlify/blobs');
 const { getCookie, verifyToken } = require('./_authUtil');
 const nodemailer = require('nodemailer');
@@ -48,46 +48,61 @@ function renderHtml(weekKey, actor, note, changes){
 }
 
 async function sendEmailSMTP({ to, subject, html }) {
-  const host   = process.env.SMTP_HOST;
+  const host   = process.env.SMTP_HOST;      // smtp.gmail.com
   const port   = Number(process.env.SMTP_PORT || 587);
-  const secure = String(process.env.SMTP_SECURE || 'false') === 'true'; // STARTTLS → false
-  const user   = process.env.SMTP_USER;
-  const pass   = process.env.SMTP_PASS;
-  const from   = process.env.EMAIL_FROM; // e.g. "HVAC Schedule <you@outlook.com>"
+  const secure = String(process.env.SMTP_SECURE || 'false') === 'true'; // use STARTTLS -> false
+  const user   = process.env.SMTP_USER;      // yourgmail@gmail.com
+  const pass   = process.env.SMTP_PASS;      // 16-char app password
+  const from   = process.env.EMAIL_FROM;     // "HVAC Schedule <yourgmail@gmail.com>"
+  const replyTo= process.env.REPLY_TO || undefined;
 
   if (!host || !user || !pass || !from) throw new Error('Missing SMTP env (host/user/pass/from)');
 
   const transporter = nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
-  await transporter.sendMail({ from, to, subject, html });
+  await transporter.sendMail({ from, to, subject, html, replyTo });
 }
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: JSON.stringify({ ok:false, error:'MethodNotAllowed' }) };
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: JSON.stringify({ ok:false, error:'MethodNotAllowed' }) };
+  }
 
-  let body={}; try { body = JSON.parse(event.body||'{}'); } catch {}
+  let body = {};
+  try { body = JSON.parse(event.body||'{}'); } catch {}
   const weekKey = String(body.weekKey||'').trim();
   const to = Array.isArray(body.to) ? body.to.filter(Boolean) : [];
-  const note = String(body.note||'').slice(0,2000);
+  const note = String(body.note||'').slice(0, 2000);
+
   if (!weekKey)  return { statusCode: 400, body: JSON.stringify({ ok:false, error:'Missing weekKey' }) };
   if (!to.length) return { statusCode: 400, body: JSON.stringify({ ok:false, error:'No recipients' }) };
 
-  // actor (from login)
-  let actor='unknown';
-  try { const t = getCookie(event.headers||{}); const p = t ? verifyToken(t) : null; if (p?.sub) actor = p.sub; } catch {}
+  // who is sending?
+  let actor = 'unknown';
+  try {
+    const token = getCookie(event.headers||{});
+    const payload = token ? verifyToken(token) : null;
+    if (payload && payload.sub) actor = payload.sub;
+  } catch {}
 
-  // load current & last-notified snapshots
+  // Load current and last-notified snapshots
   const weeks = getStore({ name: WEEKS_STORE });
   const notified = getStore({ name: NOTIFY_STORE });
+
   const current = await weeks.get(`${weekKey}.json`, { type:'json' }).catch(()=> null) || {};
   const last    = await notified.get(`${weekKey}.json`, { type:'json' }).catch(()=> null) || {};
+
   const changes = diffObjects(last, current);
 
   const subject = `HVAC schedule update — ${weekKey} (${changes.length} change${changes.length===1?'':'s'})`;
   const html = renderHtml(weekKey, actor, note, changes);
 
-  try { await sendEmailSMTP({ to, subject, html }); }
-  catch (e) { return { statusCode: 502, body: JSON.stringify({ ok:false, error: e.message }) }; }
+  try {
+    await sendEmailSMTP({ to, subject, html });
+  } catch (e) {
+    return { statusCode: 502, body: JSON.stringify({ ok:false, error: e.message }) };
+  }
 
   await notified.set(`${weekKey}.json`, JSON.stringify(current), { metadata:{ weekKey, actor, notifiedAt: Date.now() } });
+
   return { statusCode: 200, body: JSON.stringify({ ok:true, sent: to.length, changes: changes.length }) };
 };
