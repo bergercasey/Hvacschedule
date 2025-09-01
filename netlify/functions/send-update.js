@@ -1,4 +1,4 @@
-// netlify/functions/send-update.js  (SMTP via Gmail, Blobs-safe, compat)
+// netlify/functions/send-update.js  (SMTP via Gmail, client-assisted diffs, Blobs optional, compat)
 "use strict";
 const { getStore } = require('@netlify/blobs');
 const { getCookie, verifyToken } = require('./_authUtil');
@@ -30,25 +30,26 @@ function escapeHtml(s) {
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
   });
 }
-function renderHtml(weekKey, actor, note, changes) {
-  const rows = changes.slice(0, 100).map(function(c){
+function renderHtml(weekKey, actor, note, changes, metaNote) {
+  const rows = changes.slice(0, 150).map(function(c){
     const fromStr = (c.from === undefined || c.from === null) ? '' : String(c.from);
     const toStr   = (c.to   === undefined || c.to   === null) ? '' : String(c.to);
     return (
       '<tr>' +
-      `<td style="padding:6px;border:1px solid #eee;">${c.key}</td>` +
-      `<td style="padding:6px;border:1px solid #eee;">${fromStr.substring(0,120)}</td>` +
-      `<td style="padding:6px;border:1px solid #eee;">${toStr.substring(0,120)}</td>` +
+      `<td style="padding:6px;border:1px solid #eee;">${escapeHtml(c.key)}</td>` +
+      `<td style="padding:6px;border:1px solid #eee;">${escapeHtml(fromStr.substring(0,160))}</td>` +
+      `<td style="padding:6px;border:1px solid #eee;">${escapeHtml(toStr.substring(0,160))}</td>` +
       '</tr>'
     );
   }).join('');
-  const extra = changes.length > 100 ? `<p>…and ${changes.length - 100} more changes.</p>` : '';
+  const extra = changes.length > 150 ? `<p>…and ${changes.length - 150} more changes.</p>` : '';
   const link  = SITE_URL ? `<p><a href="${SITE_URL}" target="_blank" rel="noopener">Open the schedule</a></p>` : '';
   const noteBlock = note ? `<p><strong>Note from ${escapeHtml(actor)}:</strong><br/>${escapeHtml(note)}</p>` : '';
+  const meta = metaNote ? `<p style="color:#666">${escapeHtml(metaNote)}</p>` : '';
   return (
     `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#222">` +
       `<p>Schedule updated by <strong>${escapeHtml(actor)}</strong> for <strong>${escapeHtml(weekKey)}</strong>.</p>` +
-      noteBlock +
+      noteBlock + meta +
       `<table style="border-collapse:collapse;width:100%;border:1px solid #eee;">` +
         `<thead><tr>` +
           `<th style="text-align:left;padding:6px;border:1px solid #eee;">Field</th>` +
@@ -57,14 +58,13 @@ function renderHtml(weekKey, actor, note, changes) {
         `</tr></thead>` +
         `<tbody>${rows}</tbody>` +
       `</table>` +
-      extra +
-      link +
+      extra + link +
       `<p style="color:#666">You’re receiving this because you’re on the “Send Update” list.</p>` +
     `</div>`
   );
 }
 
-// Gracefully handle sites where Blobs isn't available
+// Try Blobs, but don't die if unavailable
 function tryGetStore(name) {
   try { return getStore({ name }); }
   catch (e) {
@@ -77,13 +77,30 @@ function tryGetStore(name) {
   }
 }
 
+// As a fallback, load current week via your existing function (reuses your auth cookie)
+async function loadWeekViaHttp(event, weekKey) {
+  try {
+    const host = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
+    const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
+    const url = proto + '://' + host + '/.netlify/functions/load-week?weekKey=' + encodeURIComponent(weekKey);
+    const cookie = (event.headers && (event.headers.cookie || event.headers.Cookie)) || '';
+    const r = await fetch(url, { headers: { cookie } });
+    if (!r.ok) return {};
+    const j = await r.json().catch(function(){ return {}; });
+    return (j && j.ok && j.data) ? j.data : {};
+  } catch (e) {
+    console.warn('[send-update] HTTP load-week failed:', e && e.message);
+    return {};
+  }
+}
+
 async function sendEmailSMTP(opts) {
-  const host   = process.env.SMTP_HOST;      // smtp.gmail.com
+  const host   = process.env.SMTP_HOST;
   const port   = Number(process.env.SMTP_PORT || 587);
-  const secure = String(process.env.SMTP_SECURE || 'false') === 'true'; // STARTTLS -> false
-  const user   = process.env.SMTP_USER;      // your Gmail
-  const pass   = process.env.SMTP_PASS;      // 16-char app password
-  const from   = process.env.EMAIL_FROM;     // "HVAC Schedule <yourgmail@gmail.com>"
+  const secure = String(process.env.SMTP_SECURE || 'false') === 'true';
+  const user   = process.env.SMTP_USER;
+  const pass   = process.env.SMTP_PASS;
+  const from   = process.env.EMAIL_FROM;
   const replyTo= process.env.REPLY_TO || undefined;
 
   if (!host || !user || !pass || !from) throw new Error('Missing SMTP env (host/user/pass/from)');
@@ -91,7 +108,11 @@ async function sendEmailSMTP(opts) {
   const transporter = nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
   const mail = { from, to: opts.to, subject: opts.subject, html: opts.html };
   if (replyTo) mail.replyTo = replyTo;
-  await transporter.sendMail(mail);
+
+  const info = await transporter.sendMail(mail);
+  try {
+    console.log('[send-update] sent', (info && (info.messageId || info.response || 'ok')), 'to', Array.isArray(mail.to) ? mail.to.join(',') : mail.to);
+  } catch {}
 }
 
 /* ---------- function ---------- */
@@ -106,6 +127,7 @@ exports.handler = async function(event){
   var weekKey = String(body.weekKey || '').trim();
   var to = Array.isArray(body.to) ? body.to.filter(Boolean) : [];
   var note = String(body.note || '').slice(0, 2000);
+  var baseline = (body && typeof body.baseline === 'object' && body.baseline) ? body.baseline : null;
 
   if (!weekKey)   return { statusCode: 400, body: JSON.stringify({ ok:false, error:'Missing weekKey' }) };
   if (!to.length) return { statusCode: 400, body: JSON.stringify({ ok:false, error:'No recipients' }) };
@@ -118,22 +140,32 @@ exports.handler = async function(event){
     if (payload && payload.sub) actor = payload.sub;
   } catch (e) {}
 
-  // get stores (or null if Blobs not available)
+  // Try Blobs; if not, fall back to HTTP
   const weeksStore  = tryGetStore(WEEKS_STORE);
   const notifyStore = tryGetStore(NOTIFY_STORE);
 
-  // read current & last-notified snapshots (tolerant)
-  const current = weeksStore
-    ? (await weeksStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; })) || {}
-    : {};
-  const last = notifyStore
-    ? (await notifyStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; })) || {}
-    : {};
+  var current = {};
+  if (weeksStore) {
+    current = await weeksStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; }) || {};
+  } else {
+    current = await loadWeekViaHttp(event, weekKey); // uses your existing function
+  }
 
-  const changes = diffObjects(last, current);
+  var last = {};
+  if (notifyStore) {
+    last = await notifyStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; }) || {};
+  } else if (baseline) {
+    last = baseline; // client-assisted diffs when we can’t read our own snapshot
+  }
+
+  // If we still don't have any previous snapshot, consider everything "changed"
+  var changes = diffObjects(last, current);
+  var metaNote = '';
+  if (!notifyStore && baseline) metaNote = 'Changes computed against sender’s last-sent baseline.';
+  else if (!notifyStore && !baseline) metaNote = 'No previous snapshot available; showing all current fields as changes.';
 
   const subject = 'HVAC schedule update — ' + weekKey + ' (' + changes.length + ' change' + (changes.length === 1 ? '' : 's') + ')';
-  const html = renderHtml(weekKey, actor, note, changes);
+  const html = renderHtml(weekKey, actor, note, changes, metaNote);
 
   try {
     await sendEmailSMTP({ to, subject, html });
@@ -141,7 +173,7 @@ exports.handler = async function(event){
     return { statusCode: 502, body: JSON.stringify({ ok:false, error: e.message }) };
   }
 
-  // save "last notified" snapshot if Blobs is available
+  // Save "last notified" snapshot if Blobs is available (nice-to-have)
   if (notifyStore) {
     try {
       await notifyStore.set(weekKey + '.json', JSON.stringify(current), {
@@ -149,7 +181,6 @@ exports.handler = async function(event){
       });
     } catch (e) {
       console.warn('[send-update] failed to write notify snapshot:', e && e.message);
-      // don't fail the request just because snapshot write failed
     }
   }
 
@@ -159,7 +190,11 @@ exports.handler = async function(event){
       ok: true,
       sent: to.length,
       changes: changes.length,
-      blobs: { weeks: !!weeksStore, notified: !!notifyStore }
+      used: {
+        blobsWeeks: !!weeksStore,
+        blobsNotify: !!notifyStore,
+        baseline: !!baseline
+      }
     })
   };
 };
