@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>HVAC Weekly Schedule</title>
 <style>
+  /* ===== Base ===== */
   :root { --cell-b: #ccc; --pad: 16px; }
   body { font-family: system-ui, sans-serif; margin: 0; padding: var(--pad); background:#fff; }
   h1 { text-align: center; margin: 0 0 10px; font-weight: 700; }
   .button-row { text-align: center; margin-bottom: 10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
   .button-row button { padding: 6px 10px; font-size: 14px; cursor:pointer; }
 
-  /* Weekday header (Crew + Mon..Fri) */
+  /* ===== Header ===== */
   .weekday-header {
     display: grid; grid-template-columns: 160px repeat(5, 1fr);
     text-align: center; font-weight: 700; border-bottom: 1px solid var(--cell-b);
@@ -19,7 +20,7 @@
   }
   .weekday-header div { padding: 4px 0; }
 
-  /* Weekly grid */
+  /* ===== Grid ===== */
   .grid { display: grid; grid-template-columns: 160px repeat(5, 1fr); gap: 6px 4px; }
   .crew-label { display:flex; flex-direction:column; align-items:center; font-weight:700; }
   .crew-label input { width: 92%; margin: 2px 0; padding: 5px 6px; font-size: 15px; font-weight: 700; }
@@ -29,16 +30,17 @@
   .job-input { resize: none; line-height:1.32; min-height: 58px; }
   .helper-input { color: #0b62ff; }
 
+  /* PTO checks (unchanged) */
   .pto-box, .helper-pto-box { position:absolute; width:16px; height:16px; cursor:pointer; appearance:auto; -webkit-appearance:auto; }
   .pto-box         { top:4px;  right:4px;  accent-color: red; }
   .helper-pto-box  { bottom:4px; right:4px; accent-color: #0b62ff; }
   .highlight-red { background-color: #ffe1e1; }
 
-  /* Copy mode visuals */
+  /* Copy mode */
   .copy-row-hint { outline: 2px dashed #9cc1ff; outline-offset: 2px; }
   .copy-field-hint { box-shadow: inset 0 0 0 2px #9cc1ff; border-radius: 4px; }
 
-  /* Notes (Floaters + To-Do) */
+  /* ===== Notes (Floaters + To-Do) ===== */
   #notesToggle { font-size: 13px; }
   #bottomSection { display:flex; gap:10px; margin:12px auto 0; max-width:1100px; }
   #floatersSection { flex:1; min-width:220px; }
@@ -46,7 +48,7 @@
   #todoSection .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:4px; }
   .floater-name, .todo-job { padding:6px; font-size:15px; }
 
-  /* PTO Calendar panel */
+  /* ===== PTO Panel ===== */
   #ptoPanel {
     display:none; position:fixed; inset:40px 20px 20px 20px; background:#fff; border:1px solid #ccc;
     box-shadow:0 10px 30px rgba(0,0,0,0.15); z-index:1000; border-radius:8px; overflow:hidden;
@@ -57,7 +59,7 @@
   #ptoFrame { width:100%; height:100%; border:0; }
   #ptoPanelFooter { position:absolute; bottom:0; left:0; right:0; background:#fafafa; border-top:1px solid #ddd; padding:6px 10px; font-size:12px; }
 
-  /* Calendar popup (date picker) */
+  /* ===== Calendar popup ===== */
   .calendar-popup { position:absolute; top:68px; left:20px; background:#fff; border:1px solid #ccc; padding:10px; z-index:999; font-size:14px; width:260px; box-shadow:0 6px 18px rgba(0,0,0,.1) }
   .calendar-header { display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:5px; }
   .calendar-nav { cursor:pointer; padding:0 10px; user-select:none; }
@@ -66,194 +68,61 @@
   .calendar-popup th { font-weight:700; }
   .calendar-popup td:hover { background:#eee; }
 
-  /* Tiny floating status bar (replaces Change Log) */
+  /* ===== Status bar ===== */
   #statusBar{
-    position: fixed;
-    right: 14px;
-    bottom: 12px;
-    max-width: 60vw;
+    position: fixed; right: 14px; bottom: 12px; max-width: 60vw;
     font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color:#0a0a0a;
-    background: rgba(250,250,250,.95);
-    border:1px solid #ddd;
-    border-radius: 6px;
-    padding: 6px 8px;
-    box-shadow: 0 4px 14px rgba(0,0,0,.08);
-    z-index: 1200;
+    color:#0a0a0a; background: rgba(250,250,250,.95);
+    border:1px solid #ddd; border-radius: 6px; padding: 6px 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08); z-index: 1200;
     transition: opacity 200ms ease, transform 200ms ease;
   }
   #statusBar.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
   @media print { #statusBar{ display:none !important; } }
 
-  /* ===== Auth wrapper ===== */
+  /* ===== Auth (login) ===== */
   #appShell { display:none; }
-  #authBar {
-    position: absolute; top: 8px; right: 12px; font-size: 13px; color:#333;
-  }
+  #authBar { position: absolute; top: 8px; right: 12px; font-size: 13px; color:#333; }
   #authBar a { color:#0b62ff; text-decoration:none; cursor:pointer; }
   #authGate {
     position: fixed; inset:0; background:#f7f7f8; display:flex; align-items:center; justify-content:center;
     z-index: 2000; padding: 20px;
   }
   .auth-card {
-    width: min(92vw, 360px); background:#fff; border:1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 12px 36px rgba(0,0,0,.08);
-    padding: 18px;
+    width: min(560px, 94vw); background:#fff; border:1px solid #e5e7eb; border-radius: 10px;
+    box-shadow: 0 12px 36px rgba(0,0,0,.08); padding: 22px;
   }
   .auth-card h2 { margin: 4px 0 12px; font-size: 18px; text-align:center; }
   .auth-card label { display:block; font-size:13px; margin:10px 0 4px; }
   .auth-card input[type="text"], .auth-card input[type="password"] {
     width:100%; padding:10px; font-size:15px; border:1px solid #d1d5db; border-radius:6px;
   }
-  .auth-actions { display:flex; align-items:center; justify-content:space-between; margin-top:14px; }
-  .auth-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
   .auth-error { color:#b00020; font-size:13px; margin-top:10px; min-height: 18px; }
 
   /* ===== Send Update modal ===== */
   #sendModal {
     position: fixed; inset: 0; background: rgba(0,0,0,.35);
-    display: none; align-items: center; justify-content: center; z-index: 1500;
+    display: none; align-items: center; justify-content: center; z-index: 1500; padding:16px; box-sizing:border-box;
   }
   #sendModal .card {
-    width: min(92vw, 520px);
+    width: min(600px, 94vw);
+    max-height: min(70vh, 560px);
     background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
     box-shadow: 0 14px 40px rgba(0,0,0,.18);
-    padding: 14px;
+    padding: 16px; display:flex; flex-direction:column; box-sizing:border-box;
   }
   #sendModal h3 { margin: 4px 0 10px; font-size: 18px; }
-  .rec-list { display: grid; grid-template-columns: 1fr; gap: 6px; max-height: 240px; overflow:auto; border:1px solid #eee; padding:8px; border-radius:6px; }
-  .rec-item { display:flex; align-items:center; gap:8px; font-size:14px; }
-  .rec-item small { color:#666; }
+  .rec-list { display: grid; grid-template-columns: 1fr; gap: 6px; overflow:auto; border:1px solid #eee; padding:10px 14px; border-radius:6px; }
+  .rec-item { display:flex; align-items:center; gap:10px; font-size:14px; padding:6px 4px; }
+  .rec-item input[type="checkbox"] { width:18px; height:18px; margin:0 10px 0 0; appearance: auto; -webkit-appearance: checkbox; }
+  .rec-item span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rec-item button { margin-left:10px; padding:4px 10px; }
   .rec-add { display:flex; gap:6px; margin-top:8px; }
   .rec-add input { flex:1; padding:8px; font-size:14px; }
   .send-actions { display:flex; justify-content:space-between; align-items:center; margin-top:12px; }
   .send-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
   .send-note { width:100%; min-height:64px; font-size:14px; padding:8px; }
   @media print { #sendModal { display: none !important; } }
-
-  /* === UI polish patch (modal + login) =============================== */
-  /* Modal: keep card off screen edges, tidy checkbox size, prevent overflow on iPad */
-  #sendModal { padding: 16px; box-sizing: border-box; }
-  #sendModal .card {
-    width: min(650px, 98vw);
-    max-height: min(70vh, 560px);
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-  }
-  #sendModal .rec-list {
-    flex: 1 1 auto;
-    max-height: none;              /* let it grow, the card limits height */
-    overflow: auto;
-  }
-  #sendModal .rec-item { padding: 4px 2px; }
-  #sendModal .rec-item input[type="checkbox"]{
-    width:18px; height:18px; flex:0 0 18px; margin:0;
-    appearance:auto; -webkit-appearance:auto;  /* stops oversized “bubbles” on iPad */
-  }
-  #sendModal .rec-item span{
-    flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  }
-  #sendModal .rec-item button{ flex:0 0 auto; }
-  #sendModal .send-actions{ margin-top:12px; }
-
-  /* Login card: slightly wider, consistent input/button sizing */
-  #authGate { padding: 20px; }
-  .auth-card { width: min(420px, 92vw); padding: 20px; }
-  .auth-card input[type="text"], .auth-card input[type="password"]{
-    height:40px; border-radius:8px;
-  }
-  .auth-actions { margin-top: 12px; }
-  .auth-actions input[type="checkbox"]{ width:16px; height:16px; }
-  .auth-actions button{
-    height:40px; border-radius:8px; background:#0b62ff; color:#fff; border:none; font-weight:600;
-  }
-/* FORCE the wider modal/login sizes (bulletproof override) */
-#sendModal > .card {
-  width: 98vw !important;     /* grows with screen */
-  max-width: 650px !important;/* cap — change this number to taste */
-  max-height: min(70vh, 560px);
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-#authGate .auth-card {
-  width: 96vw !important;     /* small screens */
-  max-width: 620px !important;/* cap on tablets/desktops */
-  padding: 20px;
-  box-sizing: border-box;
-}
-/* ===== FINAL MODAL/L0GIN TUNE ===== */
-
-/* Modal width: narrower & centered, with right-side gutter inside the list */
-#sendModal > .card {
-  width: 94vw !important;     /* overall width on small screens */
-  max-width: 600px !important;/* cap on tablets/desktops — adjust to taste */
-  max-height: min(70vh, 560px);
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  padding: 16px;               /* ensures inner space around all edges */
-}
-
-/* Recipient list: add inner padding; keep items from touching right edge */
-#sendModal .rec-list {
-  padding: 10px 14px;          /* ← right gutter so bubbles/buttons aren’t tight */
-  border-radius: 8px;
-}
-
-/* Row spacing and checkbox spacing */
-#sendModal .rec-item { 
-  padding: 6px 4px; 
-  gap: 10px; 
-}
-#sendModal .rec-item input[type="checkbox"]{
-  width: 18px; height: 18px;
-  margin: 0 10px 0 0;          /* ← space after the bubble */
-  appearance: auto; -webkit-appearance: checkbox;
-}
-#sendModal .rec-item span{
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-#sendModal .rec-item button{
-  margin-left: 10px;           /* ← keeps the Remove button off the edge */
-  padding: 4px 10px;
-}
-
-/* (If by “bubbles” you meant the PTO checks in the grid, add a touch of right padding) */
-.cell .pto-box         { right: 8px; }
-.cell .helper-pto-box  { right: 8px; }
-
-/* Login card: slightly narrower than modal, with comfy padding */
-#authGate .auth-card {
-  width: 94vw !important;
-  max-width: 560px !important;  /* adjust if you want this to match the modal */
-  padding: 20px 22px !important;
-  box-sizing: border-box;
-}
-.auth-actions { gap: 10px; }
-/* Login row right-gutter + comfy checkbox */
-#authGate .auth-card .auth-actions{
-  padding-right: 12px;       /* ← adds space from the right card edge */
-  padding-left: 6px;         /* small left breathing room too */
-  gap: 10px;                 /* space between label and button */
-  box-sizing: border-box;
-}
-
-#authGate .auth-card .auth-actions label input[type="checkbox"]{
-  width: 18px; height: 18px;
-  margin-right: 8px;         /* space between the bubble and “Remember me” text */
-  -webkit-appearance: checkbox;
-  appearance: checkbox;
-}
-
-/* (optional) keep the whole card a touch narrower so it feels balanced */
-#authGate .auth-card{
-  width: 94vw !important;
-  max-width: 560px !important;   /* tweak to taste */
-  padding: 20px 22px !important;
-}
-
 </style>
 </head>
 <body>
@@ -272,9 +141,19 @@
         <input id="authUserField" name="username" type="text" autocomplete="username" required />
         <label for="authPassField">Password</label>
         <input id="authPassField" name="password" type="password" autocomplete="current-password" required />
-        <div class="auth-actions">
-          <label style="font-size:12px;"><input type="checkbox" id="authRemember" /> Remember me</label>
-          <button type="submit">Sign in</button>
+        <!-- Inline spacing here guarantees the right gutter on the “bubble” -->
+        <div class="auth-actions" style="padding:0 16px 0 10px; gap:12px; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; margin-top:14px;">
+          <label style="font-size:12px; display:flex; align-items:center; margin:0;">
+            <input
+              type="checkbox"
+              id="authRemember"
+              style="width:18px;height:18px;margin-right:8px;appearance:checkbox;-webkit-appearance:checkbox;"
+            />
+            Remember me
+          </label>
+          <button type="submit" style="padding:8px 14px; height:40px; border-radius:8px; background:#0b62ff; color:#fff; border:none; font-weight:600; cursor:pointer;">
+            Sign in
+          </button>
         </div>
         <div class="auth-error" id="authError"></div>
       </form>
@@ -682,7 +561,7 @@ function appMain(){
     });
   }
 
-  /* ---------------- Persistent (UPDATED to store recipients) ---------------- */
+  /* ---------------- Persistent (recipients included) ---------------- */
   let notifyRecipients = []; // [{name,email,enabled}]
 
   function collectPersistent(){
