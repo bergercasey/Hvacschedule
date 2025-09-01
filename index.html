@@ -7,7 +7,7 @@
 <style>
   /* ===== Base ===== */
   :root { --cell-b: #ccc; --pad: 16px; }
-  * { box-sizing: border-box; } /* ★ tweaked: ensure gutters behave everywhere */
+  * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; margin: 0; padding: var(--pad); background:#fff; }
   h1 { text-align: center; margin: 0 0 10px; font-weight: 700; }
   .button-row { text-align: center; margin-bottom: 10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
@@ -32,7 +32,7 @@
   .helper-input { color: #0b62ff; }
 
   /* PTO checks */
-  .pto-box, .helper-pto-box { position:absolute; width:16px; height:16px; cursor:pointer; appearance:auto; -webkit-appearance:auto; }
+  .pto-box, .helper-pto-box { position:absolute; width:18px; height:18px; cursor:pointer; appearance:auto; -webkit-appearance:auto; }
   .pto-box         { top:4px;  right:4px;  accent-color: red; }
   .helper-pto-box  { bottom:4px; right:4px; accent-color: #0b62ff; }
   .highlight-red { background-color: #ffe1e1; }
@@ -92,18 +92,18 @@
   }
   .auth-card {
     width: 100%;
-    max-width: 480px;              /* ★ tweaked: narrower than before */
-    background:#fff; border:1px solid #e5e7eb; border-radius: 12px; /* ★ tweaked: softer radius */
+    max-width: 480px;
+    background:#fff; border:1px solid #e5e7eb; border-radius: 12px;
     box-shadow: 0 12px 36px rgba(0,0,0,.08);
-    padding: 18px;                 /* ★ tweaked: balanced padding all around */
+    padding: 18px;
   }
   .auth-card h2 { margin: 4px 0 12px; font-size: 18px; text-align:center; }
-  .auth-card label { display:block; font-size:13px; margin:10px 0 6px; } /* ★ tweaked: +2px bottom gap */
+  .auth-card label { display:block; font-size:13px; margin:10px 0 6px; }
   .auth-card input[type="text"], .auth-card input[type="password"] {
     width:100%; padding:10px; font-size:15px; border:1px solid #d1d5db; border-radius:6px;
     background:#fff;
   }
-  .auth-actions {                 /* ★ tweaked: moved from inline → CSS and added safe gutters */
+  .auth-actions {
     padding: 0 10px;
     gap:12px;
     display:flex; align-items:center; justify-content:space-between; margin-top:14px;
@@ -116,9 +116,9 @@
     display: none; align-items: center; justify-content: center; z-index: 1500; padding:16px;
   }
   #sendModal .card {
-    width: min(560px, 94vw);      /* ★ tweaked: consistent width, slight increase from 600->560 max */
+    width: min(560px, 94vw);
     max-height: min(70vh, 560px);
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; /* ★ subtle radius */
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
     box-shadow: 0 14px 40px rgba(0,0,0,.18);
     padding: 16px; display:flex; flex-direction:column;
   }
@@ -126,7 +126,7 @@
   .rec-list {
     display: grid; grid-template-columns: 1fr; gap: 6px;
     overflow: auto; border:1px solid #eee; padding:10px 14px; border-radius:6px;
-    max-height: 240px;            /* ★ tweaked: reliable scroll on iPad */
+    max-height: 240px;
   }
   .rec-item { display:flex; align-items:center; gap:10px; font-size:14px; padding:6px 4px; }
   .rec-item input[type="checkbox"] { width:18px; height:18px; margin:0 10px 0 0; appearance: auto; -webkit-appearance: checkbox; }
@@ -156,7 +156,7 @@
         <input id="authUserField" name="username" type="text" autocomplete="username" required />
         <label for="authPassField">Password</label>
         <input id="authPassField" name="password" type="password" autocomplete="current-password" required />
-        <div class="auth-actions"><!-- ★ moved padding from inline to CSS -->
+        <div class="auth-actions">
           <label style="font-size:12px; display:flex; align-items:center; margin:0;">
             <input
               type="checkbox"
@@ -266,6 +266,8 @@
     <div class="card" role="dialog" aria-modal="true">
       <h3>Send Update</h3>
 
+      <!-- “Sending as <user>” will be injected just below this heading -->
+
       <div style="font-size:13px; color:#555; margin-bottom:6px;">
         Choose who should get an email about changes for the currently displayed week.
       </div>
@@ -301,6 +303,13 @@
   </div>
 
 <script>
+/* =========================
+   GLOBAL USER CONTEXT
+   ========================= */
+window.currentUser = null;      // set after auth
+// Optional role gating if you later return canSend from the server:
+// window.canSend = true;
+
 /* =========================
    AUTH ENDPOINTS (Netlify Functions)
    - /.netlify/functions/auth-me
@@ -351,13 +360,18 @@ const Auth = (() => {
   // Try existing session
   const session = await Auth.me();
   if (session.ok){
-    aUser.textContent = `Signed in as ${session.user?.username || 'user'}`;
+    window.currentUser = (session.user?.username || 'user');  // set global
+    aUser.textContent = `Signed in as ${window.currentUser}`;
     aBar.style.display = 'block';
     gate.style.display = 'none';
     app.style.display  = 'block';
     app.removeAttribute('aria-hidden');
     document.body.style.paddingTop = '28px';
-    appMain(); // ← run the real app now
+
+    // Autofocus convenience if they log out/in later
+    try { document.getElementById('authUserField')?.focus(); } catch {}
+
+    appMain(); // run the real app now
     aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
     return;
   }
@@ -366,6 +380,11 @@ const Auth = (() => {
   gate.style.display = 'flex';
   app.style.display  = 'none';
   aBar.style.display = 'none';
+
+  // Autofocus username; allow Enter on password to submit
+  try { document.getElementById('authUserField')?.focus(); } catch {}
+  const pass = document.getElementById('authPassField');
+  if (pass) pass.addEventListener('keydown', (e)=>{ if (e.key==='Enter') form.requestSubmit(); });
 
   form.addEventListener('submit', async (e)=>{
     e.preventDefault();
@@ -377,14 +396,15 @@ const Auth = (() => {
     const res = await Auth.login(username, password, remember);
     if (!res.ok){ return showError(res.error || 'Login failed.'); }
 
-    aUser.textContent = `Signed in as ${res.user?.username || username}`;
+    window.currentUser = (res.user?.username || username);   // set global
+    aUser.textContent = `Signed in as ${window.currentUser}`;
     aBar.style.display = 'block';
     gate.style.display = 'none';
     app.style.display  = 'block';
     app.removeAttribute('aria-hidden');
     document.body.style.paddingTop = '28px';
     aLogout.onclick = async () => { await Auth.logout(); location.reload(); };
-    appMain(); // ← run the real app now
+    appMain(); // run the real app now
   }, { passive:false });
 })();
 
@@ -409,6 +429,8 @@ function appMain(){
       statusEl.textContent = 'Ready.';
     }, sticky ? 8000 : 4200);
   }
+  window.addEventListener('online', ()=> showStatus('Online', true));
+  window.addEventListener('offline', ()=> showStatus('Offline — changes will resend', true));
 
   /** Logger compatible with your previous addLog() calls */
   function addLog(msg, obj){
@@ -517,6 +539,7 @@ function appMain(){
         const pto = document.createElement('input');
         pto.type = 'checkbox';
         pto.className = 'pto-box';
+        pto.setAttribute('aria-label','Lead PTO');
         pto.addEventListener('change', ()=>{
           cell.classList.toggle('highlight-red', pto.checked);
         });
@@ -524,7 +547,8 @@ function appMain(){
 
         const helperPto = document.createElement('input');
         helperPto.type = 'checkbox';
-        helperPto.className = 'helper-pto-box'; // BLUE check, no shading
+        helperPto.className = 'helper-pto-box';
+        helperPto.setAttribute('aria-label','Helper PTO');
         cell.appendChild(helperPto);
 
         grid.appendChild(cell);
@@ -550,7 +574,7 @@ function appMain(){
     const hpto   = Array.from(grid.querySelectorAll('.helper-pto-box'));
     const out={}, max=Math.max(jobs.length, helps.length, pto.length, hpto.length);
     for (let i=0;i<max;i++){
-      const row=Math.floor(i/5)+1, day=['Mon','Tue','Wed','Thu','Fri'][i%5], r=String(row).padStart(2,'0'), base=`${day}:${r}`;
+      const row=Math.floor(i/5)+1, day=DAYS[i%5], r=pad2(row), base=`${day}:${r}`;
       out[`${base}:job`]       = jobs[i]  ? (jobs[i].value  || '') : '';
       out[`${base}:helper`]    = helps[i] ? (helps[i].value || '') : '';
       out[`${base}:pto`]       = !!(pto[i]   && pto[i].checked);
@@ -575,24 +599,27 @@ function appMain(){
     });
   }
 
-  /* ---------------- Persistent (recipients included) ---------------- */
+  /* ---------------- Persistent (recipients INCLUDED, per-user) ---------------- */
   let notifyRecipients = []; // [{name,email,enabled}]
 
   function collectPersistent(){
     const out={};
-    grid.querySelectorAll('.lead-input').forEach((el,i)=> out[`Lead:${String(i+1).padStart(2,'0')}`]=el.value||'');
-    grid.querySelectorAll('.apprentice-input').forEach((el,i)=> out[`Apprentice:${String(i+1).padStart(2,'0')}`]=el.value||'');
-    document.querySelectorAll('.floater-name').forEach((el,i)=> out[`Floater:${String(i+1).padStart(2,'0')}`]=el.value||'');
-    document.querySelectorAll('.todo-job').forEach((el,i)=> out[`Todo:${String(i+1).padStart(2,'0')}`]=el.value||'');
+    grid.querySelectorAll('.lead-input').forEach((el,i)=> out[`Lead:${pad2(i+1)}`]=el.value||'');
+    grid.querySelectorAll('.apprentice-input').forEach((el,i)=> out[`Apprentice:${pad2(i+1)}`]=el.value||'');
+    document.querySelectorAll('.floater-name').forEach((el,i)=> out[`Floater:${pad2(i+1)}`]=el.value||'');
+    document.querySelectorAll('.todo-job').forEach((el,i)=> out[`Todo:${pad2(i+1)}`]=el.value||'');
 
     // PTO calendar embed URL
     const ptoUrl = document.getElementById('ptoUrl')?.value?.trim() || '';
     out['PTOEmbedURL'] = ptoUrl;
 
-    // Saved recipients for Send Update
-    out['NotifyRecipients'] = notifyRecipients;
+    // Recipients: save per user (fallback legacy key will be read but not written)
+    const ukey = window.currentUser ? `NotifyRecipients:${window.currentUser}` : 'NotifyRecipients';
+    out[ukey] = notifyRecipients;
+
     return out;
   }
+
   function applyPersistent(data){
     const put=(sel,prefix,root=document)=> {
       const list = Array.from(root.querySelectorAll(sel));
@@ -611,18 +638,23 @@ function appMain(){
       const url = data.PTOEmbedURL;
       const input = document.getElementById('ptoUrl');
       if (input) input.value = url;
-      cachePTOUrl = url; // seed cache
+      cachePTOUrl = url; // seed cache for PTO panel
       updatePTOHint(url);
     }
 
-    // Saved recipients
-    if (Array.isArray(data?.NotifyRecipients)) {
-      notifyRecipients = data.NotifyRecipients.map(r => ({
-        name: String(r.name||'').trim(),
-        email: String(r.email||'').trim(),
-        enabled: !!r.enabled
-      })).filter(r => r.email);
+    // Recipients (prefer per-user; fallback to legacy shared on first load)
+    let loaded = [];
+    const perUserKey = window.currentUser ? `NotifyRecipients:${window.currentUser}` : null;
+    if (perUserKey && Array.isArray(data?.[perUserKey])) {
+      loaded = data[perUserKey];
+    } else if (Array.isArray(data?.NotifyRecipients)) {
+      loaded = data.NotifyRecipients; // legacy shared list
     }
+    notifyRecipients = (loaded || []).map(r => ({
+      name: String(r?.name||'').trim(),
+      email: String(r?.email||'').trim(),
+      enabled: !!r?.enabled
+    })).filter(r => r.email);
   }
 
   /* ---------------- Netlify Endpoints ---------------- */
@@ -698,11 +730,16 @@ function appMain(){
   /* ---------------- Calendar (date picker) ---------------- */
   let calOffset = 0;
   const calWrap = document.getElementById('calendarContainer');
+  const calBtn = document.getElementById('calendarBtn');
 
   function showCalendar(){
+    // anchor near 📅 button and keep on-screen
+    const r = calBtn.getBoundingClientRect();
+    calWrap.style.left = Math.max(12, Math.min(window.innerWidth - 272, r.left)).toFixed(0)+'px';
+    calWrap.style.top  = (r.bottom + 8) + 'px';
     calWrap.style.display='block';
     renderCalendar(state.monday);
-    const outside = (e)=>{ if (!calWrap.contains(e.target) && e.target.id !== 'calendarBtn'){ hideCalendar(); } };
+    const outside = (e)=>{ if (!calWrap.contains(e.target) && e.target !== calBtn){ hideCalendar(); } };
     document.addEventListener('click', outside, {capture:true, once:true});
   }
   function hideCalendar(){ calWrap.style.display='none'; calOffset=0; }
@@ -854,18 +891,6 @@ function appMain(){
   const sendCancel = document.getElementById('sendCancelBtn');
   const sendBusy = document.getElementById('sendBusy');
 
-  function openSendModal(){
-    renderRecList();
-    noteEl.value = '';
-    modal.style.display = 'flex';
-    modal.setAttribute('aria-hidden','false');
-  }
-  function closeSendModal(){
-    modal.style.display = 'none';
-    modal.setAttribute('aria-hidden','true');
-  }
-  window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeSendModal(); });
-
   function renderRecList(){
     if (!notifyRecipients.length){
       recList.innerHTML = `<div style="font-size:13px;color:#666;">No saved recipients yet. Add a name/email below.</div>`;
@@ -901,6 +926,34 @@ function appMain(){
     });
   }
 
+  function openSendModal(){
+    renderRecList();
+    noteEl.value = '';
+
+    // Show who is sending
+    const who = window.currentUser ? `Sending as ${window.currentUser}` : '';
+    let note = modal.querySelector('.sending-as');
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'sending-as';
+      note.style.cssText = 'font-size:12px;color:#666;margin:-4px 0 8px;';
+      modal.querySelector('.card').insertBefore(note, modal.querySelector('h3').nextSibling);
+    }
+    note.textContent = who;
+
+    // lock background scroll on iPad while modal open
+    document.body.style.overflow = 'hidden';
+
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden','false');
+  }
+  function closeSendModal(){
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden','true');
+    document.body.style.overflow = ''; // unlock scroll
+  }
+  window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeSendModal(); });
+
   recAdd.onclick = ()=>{
     const name = recName.value.trim();
     const email= recEmail.value.trim();
@@ -908,7 +961,7 @@ function appMain(){
     notifyRecipients.push({ name, email, enabled:true });
     recName.value = ''; recEmail.value='';
     renderRecList();
-    tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent())); // save list
+    tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent())); // save list (per-user)
   };
 
   sendBtn.onclick = openSendModal;
@@ -925,11 +978,12 @@ function appMain(){
       tPersist = deb(tPersist, ()=> apiSavePersistent(collectPersistent()));
     }
 
-    // Ask server to compute diff & send
+    // Ask server to compute diff & send — include the SENDER
     const payload = {
       weekKey: state.key(),
       to: selected,
-      note: noteEl.value || ''
+      note: noteEl.value || '',
+      fromUser: window.currentUser || ''     // << include sender for email subject/body
     };
     try{
       const r = await fetch('/.netlify/functions/send-update', {
@@ -940,7 +994,7 @@ function appMain(){
       });
       const t = await r.json().catch(()=> ({}));
       if (r.ok && t.ok){
-        addLog('email-update-sent', {to:selected.length, week: payload.weekKey});
+        addLog('email-update-sent', {to:selected.length, week: payload.weekKey, from: payload.fromUser});
         showStatus('Update sent.');
         closeSendModal();
       } else {
@@ -967,7 +1021,7 @@ function appMain(){
     createGrid();
     attachCopyHandlers();
     apiLoadWeek(state.key()).then(applyWeekData);
-    apiLoadPersistent(); // loads PTOEmbedURL + saved recipients
+    apiLoadPersistent(); // loads PTOEmbedURL + saved recipients (per-user)
     showStatus('Ready.');
   })();
 }
