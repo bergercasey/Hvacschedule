@@ -59,4 +59,107 @@ function renderHtml(weekKey, actor, note, changes) {
       `</table>` +
       extra +
       link +
-      `<p style="color:#666">You’re receiving thi
+      `<p style="color:#666">You’re receiving this because you’re on the “Send Update” list.</p>` +
+    `</div>`
+  );
+}
+
+// Gracefully handle sites where Blobs isn't available
+function tryGetStore(name) {
+  try { return getStore({ name }); }
+  catch (e) {
+    const msg = String((e && (e.message || e.name)) || '');
+    if (msg.indexOf('MissingBlobsEnvironmentError') !== -1 || msg.toLowerCase().indexOf('blobs') !== -1) {
+      console.warn('[send-update] Blobs not available; proceeding without snapshots.');
+      return null;
+    }
+    throw e;
+  }
+}
+
+async function sendEmailSMTP(opts) {
+  const host   = process.env.SMTP_HOST;      // smtp.gmail.com
+  const port   = Number(process.env.SMTP_PORT || 587);
+  const secure = String(process.env.SMTP_SECURE || 'false') === 'true'; // STARTTLS -> false
+  const user   = process.env.SMTP_USER;      // your Gmail
+  const pass   = process.env.SMTP_PASS;      // 16-char app password
+  const from   = process.env.EMAIL_FROM;     // "HVAC Schedule <yourgmail@gmail.com>"
+  const replyTo= process.env.REPLY_TO || undefined;
+
+  if (!host || !user || !pass || !from) throw new Error('Missing SMTP env (host/user/pass/from)');
+
+  const transporter = nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
+  const mail = { from, to: opts.to, subject: opts.subject, html: opts.html };
+  if (replyTo) mail.replyTo = replyTo;
+  await transporter.sendMail(mail);
+}
+
+/* ---------- function ---------- */
+exports.handler = async function(event){
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: JSON.stringify({ ok:false, error:'MethodNotAllowed' }) };
+  }
+
+  // parse input
+  var body = {};
+  try { body = JSON.parse(event.body || '{}'); } catch (e) {}
+  var weekKey = String(body.weekKey || '').trim();
+  var to = Array.isArray(body.to) ? body.to.filter(Boolean) : [];
+  var note = String(body.note || '').slice(0, 2000);
+
+  if (!weekKey)   return { statusCode: 400, body: JSON.stringify({ ok:false, error:'Missing weekKey' }) };
+  if (!to.length) return { statusCode: 400, body: JSON.stringify({ ok:false, error:'No recipients' }) };
+
+  // actor from auth cookie (best-effort)
+  var actor = 'unknown';
+  try {
+    const token = getCookie(event.headers || {});
+    const payload = token ? verifyToken(token) : null;
+    if (payload && payload.sub) actor = payload.sub;
+  } catch (e) {}
+
+  // get stores (or null if Blobs not available)
+  const weeksStore  = tryGetStore(WEEKS_STORE);
+  const notifyStore = tryGetStore(NOTIFY_STORE);
+
+  // read current & last-notified snapshots (tolerant)
+  const current = weeksStore
+    ? (await weeksStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; })) || {}
+    : {};
+  const last = notifyStore
+    ? (await notifyStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; })) || {}
+    : {};
+
+  const changes = diffObjects(last, current);
+
+  const subject = 'HVAC schedule update — ' + weekKey + ' (' + changes.length + ' change' + (changes.length === 1 ? '' : 's') + ')';
+  const html = renderHtml(weekKey, actor, note, changes);
+
+  try {
+    await sendEmailSMTP({ to, subject, html });
+  } catch (e) {
+    return { statusCode: 502, body: JSON.stringify({ ok:false, error: e.message }) };
+  }
+
+  // save "last notified" snapshot if Blobs is available
+  if (notifyStore) {
+    try {
+      await notifyStore.set(weekKey + '.json', JSON.stringify(current), {
+        metadata: { weekKey: weekKey, actor: actor, notifiedAt: Date.now() }
+      });
+    } catch (e) {
+      console.warn('[send-update] failed to write notify snapshot:', e && e.message);
+      // don't fail the request just because snapshot write failed
+    }
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      ok: true,
+      sent: to.length,
+      changes: changes.length,
+      blobs: { weeks: !!weeksStore, notified: !!notifyStore }
+    })
+  };
+};
