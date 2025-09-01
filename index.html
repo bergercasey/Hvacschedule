@@ -129,6 +129,44 @@
   .send-actions button { padding:8px 12px; font-size:14px; cursor:pointer; }
   .send-note { width:100%; min-height:64px; font-size:14px; padding:8px; }
   @media print { #sendModal { display: none !important; } }
+
+  /* === UI polish patch (modal + login) =============================== */
+  /* Modal: keep card off screen edges, tidy checkbox size, prevent overflow on iPad */
+  #sendModal { padding: 16px; box-sizing: border-box; }
+  #sendModal .card {
+    width: min(520px, 92vw);
+    max-height: min(70vh, 560px);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+  #sendModal .rec-list {
+    flex: 1 1 auto;
+    max-height: none;              /* let it grow, the card limits height */
+    overflow: auto;
+  }
+  #sendModal .rec-item { padding: 4px 2px; }
+  #sendModal .rec-item input[type="checkbox"]{
+    width:18px; height:18px; flex:0 0 18px; margin:0;
+    appearance:auto; -webkit-appearance:auto;  /* stops oversized “bubbles” on iPad */
+  }
+  #sendModal .rec-item span{
+    flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #sendModal .rec-item button{ flex:0 0 auto; }
+  #sendModal .send-actions{ margin-top:12px; }
+
+  /* Login card: slightly wider, consistent input/button sizing */
+  #authGate { padding: 20px; }
+  .auth-card { width: min(420px, 92vw); padding: 20px; }
+  .auth-card input[type="text"], .auth-card input[type="password"]{
+    height:40px; border-radius:8px;
+  }
+  .auth-actions { margin-top: 12px; }
+  .auth-actions input[type="checkbox"]{ width:16px; height:16px; }
+  .auth-actions button{
+    height:40px; border-radius:8px; background:#0b62ff; color:#fff; border:none; font-weight:600;
+  }
 </style>
 </head>
 <body>
