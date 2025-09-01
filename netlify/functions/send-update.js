@@ -1,4 +1,5 @@
-// netlify/functions/send-update.js (SMTP via Gmail, server baseline via load/save-persistent; crew names in Field; Blobs optional)
+// netlify/functions/send-update.js
+// SMTP via Gmail, server baseline via load/save-persistent; CREW NAME PREFIX (robust lookup); Blobs optional; compat JS
 "use strict";
 const { getStore } = require('@netlify/blobs');
 const { getCookie, verifyToken } = require('./_authUtil');
@@ -10,8 +11,7 @@ const SITE_URL     = process.env.SITE_URL     || '';
 
 /* ---------- helpers ---------- */
 function diffObjects(prev, next) {
-  prev = prev || {};
-  next = next || {};
+  prev = prev || {}; next = next || {};
   const keys = {};
   Object.keys(prev).forEach(k => { keys[k] = 1; });
   Object.keys(next).forEach(k => { keys[k] = 1; });
@@ -37,13 +37,14 @@ function prettyKey(k, crewMap){
   try{
     var parts = String(k).split(':');    // Mon:01:job
     var day   = parts[0]||'';
-    var row   = parts[1]||'';
+    var rowRaw= parts[1]||'';            // "01"
     var field = parts[2]||'';
-    if (row && row[0]==='0') row = String(parseInt(row,10));
+    var rowNum= rowRaw.replace(/^0+/, '') || rowRaw; // "1"
     field = titleCaseWord(field).replace(/Pto/i,'PTO');
-    var crew = crewMap && crewMap[row] ? crewMap[row] : '';
-    // Example: "Matt — Mon 1 — Job"
-    return (crew ? (crew + ' — ') : '') + (day + ' ' + (row||'') + ' — ' + field).trim();
+
+    var crew = (crewMap[rowRaw] || crewMap[rowNum] || '').trim();
+    var prefix = crew ? (crew + ' — ') : '';
+    return (prefix + (day + ' ' + (rowNum||'') + ' — ' + field)).trim();
   } catch(e){ return k; }
 }
 function renderHtml(weekKey, actor, note, changes, metaNote, crewMap) {
@@ -95,7 +96,7 @@ function tryGetStore(name) {
   }
 }
 
-/* ------- use your existing HTTP functions ------- */
+/* ------- HTTP helpers to use your existing functions ------- */
 async function httpJson(url, opts) {
   opts = opts || {};
   const r = await fetch(url, opts);
@@ -103,11 +104,14 @@ async function httpJson(url, opts) {
   let j = null; try { j = JSON.parse(txt); } catch(_) {}
   return { ok: r.ok, status: r.status, json: j, text: txt };
 }
+function siteUrlFromEvent(event, path) {
+  const host  = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
+  const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
+  return proto + '://' + host + path;
+}
 async function loadWeekViaHttp(event, weekKey) {
   try {
-    const host = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
-    const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
-    const url = proto + '://' + host + '/.netlify/functions/load-week?weekKey=' + encodeURIComponent(weekKey);
+    const url = siteUrlFromEvent(event, '/.netlify/functions/load-week?weekKey=' + encodeURIComponent(weekKey));
     const cookie = (event.headers && (event.headers.cookie || event.headers.Cookie)) || '';
     const r = await fetch(url, { headers: { cookie: cookie } });
     if (!r.ok) return {};
@@ -117,9 +121,7 @@ async function loadWeekViaHttp(event, weekKey) {
 }
 async function loadPersistentViaHttp(event) {
   try {
-    const host = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
-    const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
-    const url = proto + '://' + host + '/.netlify/functions/load-persistent';
+    const url = siteUrlFromEvent(event, '/.netlify/functions/load-persistent');
     const cookie = (event.headers && (event.headers.cookie || event.headers.Cookie)) || '';
     const res = await httpJson(url, { headers: { cookie: cookie } });
     if (!res.ok || !res.json || !res.json.ok) return {};
@@ -128,9 +130,7 @@ async function loadPersistentViaHttp(event) {
 }
 async function savePersistentViaHttp(event, data) {
   try {
-    const host = (event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
-    const proto = (event.headers && (event.headers['x-forwarded-proto'] || 'https')) || 'https';
-    const url = proto + '://' + host + '/.netlify/functions/save-persistent';
+    const url = siteUrlFromEvent(event, '/.netlify/functions/save-persistent');
     const cookie = (event.headers && (event.headers.cookie || event.headers.Cookie)) || '';
     const res = await httpJson(url, {
       method: 'POST',
@@ -141,25 +141,83 @@ async function savePersistentViaHttp(event, data) {
   } catch(e){ console.warn('[send-update] HTTP save-persistent failed:', e && e.message); return false; }
 }
 
-// Build map of row -> crew name (Lead preferred, else Apprentice)
-function buildCrewMap(persistent){
-  const map = {};
-  if (!persistent) return map;
-  Object.keys(persistent).forEach(function(key){
-    if (key.indexOf('Lead:')===0){
-      var row = key.split(':')[1] || '';
-      var name = persistent[key]||'';
-      if (name) map[row] = name;
-    }
-  });
-  Object.keys(persistent).forEach(function(key){
-    if (key.indexOf('Apprentice:')===0){
-      var row = key.split(':')[1] || '';
-      if (!map[row]){
-        var nm = persistent[key]||'';
-        if (nm) map[row] = nm;
+/* ------- crew name detection ------- */
+// Collect row IDs present in the week (e.g., "01","02") and normalized ("1","2")
+function collectRowIds(current){
+  const rows = {};
+  Object.keys(current || {}).forEach(function(k){
+    const parts = k.split(':'); // Day:Row:Field
+    if (parts.length >= 3) {
+      const rowRaw = parts[1];
+      if (rowRaw) {
+        const rowNum = String(parseInt(rowRaw,10));
+        rows[rowRaw] = true;
+        rows[rowNum] = true;
       }
     }
+  });
+  return Object.keys(rows);
+}
+// Best-effort find of crew name for a given row ID from persistent data.
+function findCrewNameForRow(persistent, current, rowId){
+  if (!persistent) persistent = {};
+  var name = '';
+
+  var rowNum = String(parseInt(rowId,10));        // "1"
+  var rowPad = rowNum.length===1 ? '0'+rowNum : rowNum; // "01" (still fine if already 2+)
+
+  // regex that matches ... 1 / 01 as a whole token (not "11")
+  var token1 = new RegExp('(^|[^0-9])' + rowNum + '([^0-9]|$)');
+  var token0 = new RegExp('(^|[^0-9])' + rowPad + '([^0-9]|$)');
+
+  // Scan persistent keys for likely fields, with priority
+  var bestScore = -1, bestName = '';
+  Object.keys(persistent).forEach(function(k){
+    var v = persistent[k];
+    if (typeof v !== 'string') return;
+    var val = v.trim(); if (!val) return;
+
+    var kl = String(k).toLowerCase();
+    var hit = token1.test(kl) || token0.test(kl);
+    if (!hit) return;
+
+    var score = 0;
+    if (kl.indexOf('lead') !== -1 || kl.indexOf('foreman') !== -1) score = 30;
+    else if (kl.indexOf('crew') !== -1 || kl.indexOf('name') !== -1 || kl.indexOf('row') !== -1) score = 20;
+    else if (kl.indexOf('apprentice') !== -1 || kl.indexOf('helper') !== -1) score = 10;
+
+    if (score > bestScore) { bestScore = score; bestName = val; }
+  });
+
+  name = bestName;
+
+  // Fallback: try current week helper (Mon..Fri) if still empty
+  if (!name) {
+    var days = ['Mon','Tue','Wed','Thu','Fri'];
+    for (var i=0;i<days.length && !name;i++){
+      var key = days[i] + ':' + rowPad + ':helper';
+      if (current && typeof current[key] === 'string' && current[key].trim()) {
+        name = current[key].trim();
+        break;
+      }
+      key = days[i] + ':' + rowNum + ':helper';
+      if (current && typeof current[key] === 'string' && current[key].trim()) {
+        name = current[key].trim();
+        break;
+      }
+    }
+  }
+  return name || '';
+}
+// Build row->name map for all rows in the current week
+function buildCrewMap(persistent, current){
+  const map = {};
+  const rows = collectRowIds(current);
+  rows.forEach(function(r){
+    var nm = findCrewNameForRow(persistent, current, r);
+    if (nm) { map[r] = nm; }
+    var rPad = (String(parseInt(r,10)).length===1) ? ('0'+parseInt(r,10)) : String(parseInt(r,10));
+    if (nm) { map[rPad] = nm; } // store both pad/unpad
   });
   return map;
 }
@@ -211,19 +269,22 @@ exports.handler = async function(event){
   if (weeksStore) current = await weeksStore.get(weekKey + '.json', { type:'json' }).catch(function(){ return null; }) || {};
   else            current = await loadWeekViaHttp(event, weekKey);
 
-  // persistent (for both baseline and crew names)
+  // persistent (for baseline & names)
   var persistent = await loadPersistentViaHttp(event);
   if (!persistent || typeof persistent !== 'object') persistent = {};
   if (!persistent.NotifyBaseline) persistent.NotifyBaseline = {};
-  var crewMap = buildCrewMap(persistent);
-  var last = persistent.NotifyBaseline[weekKey] || null;
 
-  // first time = initialize (0 changes)
+  // baseline
+  var last = persistent.NotifyBaseline[weekKey] || null;
   var firstInit = false;
   if (!last || Object.keys(last).length === 0) { firstInit = true; last = current; }
 
+  // diffs
   var changes  = diffObjects(last, current);
   var metaNote = firstInit ? 'First notification for this week — baseline initialized. Future emails will show only changed fields.' : '';
+
+  // crew names
+  var crewMap = buildCrewMap(persistent, current);
 
   const subject = 'HVAC schedule update — ' + weekKey + ' (' + changes.length + ' change' + (changes.length === 1 ? '' : 's') + ')';
   const html    = renderHtml(weekKey, actor, note, changes, metaNote, crewMap);
