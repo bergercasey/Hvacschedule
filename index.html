@@ -85,13 +85,6 @@
   #statusBar.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
   @media print { #statusBar{ display:none !important; } }
 </style>
-
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0b62ff">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="apple-touch-icon" href="/icons/icon-192.png">
-
 </head>
 <body>
 
@@ -636,15 +629,6 @@
   })();
 
 })();
-</script>
-
-
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(()=>{});
-    });
-  }
 </script>
 
 </body>
