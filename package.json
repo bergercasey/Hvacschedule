@@ -1,8 +1,9 @@
 {
+  "name": "hvac-scheduler-clean",
+  "version": "1.0.0",
+  "private": true,
   "dependencies": {
     "@netlify/blobs": "^5.0.0",
-    "cookie": "^0.6.0",
-    "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.8"
   }
 }
