@@ -1,70 +1,72 @@
-// Shared helpers for auth functions
-const crypto = require('crypto');
+// netlify/functions/_authUtil.js
+const jwt = require('jsonwebtoken');
+const cookie = require('cookie');
 
-const COOKIE_NAME = process.env.COOKIE_NAME || 'sched_session';
-const COOKIE_SECRET = process.env.COOKIE_SECRET || 'change-me-please';
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days default
+const COOKIE_NAME = 'sess';
+const COOKIE_SECRET = process.env.COOKIE_SECRET || 'dev-secret-change-me';
 
-function parseUsers() {
+// 30 days by default
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'Lax',
+  path: '/',
+  maxAge: 60 * 60 * 24 * 30
+};
+
+function parseBody(event) {
+  try { return JSON.parse(event.body || '{}'); } catch { return {}; }
+}
+
+// AUTH_USERS_JSON: [{"username":"manager","password":"secret"}]
+function readUserList() {
   try {
     const raw = process.env.AUTH_USERS_JSON || '[]';
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) throw new Error('AUTH_USERS_JSON must be an array');
-    return arr.map(u => ({ username: String(u.username||''), password: String(u.password||'') }));
-  } catch (e) {
-    console.error('AUTH_USERS_JSON parse error:', e.message);
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
     return [];
   }
 }
 
-function signPayload(obj) {
-  const json = JSON.stringify(obj);
-  const sig  = crypto.createHmac('sha256', COOKIE_SECRET).update(json).digest('hex');
-  return Buffer.from(JSON.stringify({ json, sig })).toString('base64url');
+function matchUser(username, password) {
+  const list = readUserList();
+  return list.find(u => u.username === username && u.password === password);
 }
 
-function verifyToken(token) {
-  try {
-    const { json, sig } = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
-    const expected = crypto.createHmac('sha256', COOKIE_SECRET).update(json).digest('hex');
-    if (sig !== expected) return null;
-    const data = JSON.parse(json);
-    if (data.exp && Date.now() > data.exp) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function makeCookie(value, { remember=false } = {}) {
-  const maxAge = remember ? COOKIE_MAX_AGE : 60 * 60 * 4; // 4h if not remember
-  const parts = [
-    `${COOKIE_NAME}=${value}`,
-    `Path=/`,
-    `HttpOnly`,
-    `SameSite=Lax`,
-    `Secure`
-  ];
-  if (maxAge) parts.push(`Max-Age=${maxAge}`);
-  return parts.join('; ');
+function makeCookie(value, opts = {}) {
+  return cookie.serialize(COOKIE_NAME, value, { ...COOKIE_OPTS, ...opts });
 }
 
 function clearCookie() {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`;
+  return cookie.serialize(COOKIE_NAME, '', { ...COOKIE_OPTS, maxAge: 0 });
 }
 
-function getCookie(headers) {
-  const cookie = headers.cookie || headers.Cookie || '';
-  const found = cookie.split(';').map(s => s.trim()).find(s => s.startsWith(`${COOKIE_NAME}=`));
-  return found ? found.split('=').slice(1).join('=') : '';
+function signSession(payload) {
+  return jwt.sign(payload, COOKIE_SECRET, { expiresIn: '30d' });
+}
+
+function verifySession(token) {
+  try { return jwt.verify(token, COOKIE_SECRET); } catch { return null; }
+}
+
+function readSession(event) {
+  const hdr = event.headers || {};
+  const raw = hdr.cookie || hdr.Cookie || '';
+  const parsed = cookie.parse(raw || '');
+  const token = parsed[COOKIE_NAME];
+  if (!token) return null;
+  return verifySession(token);
 }
 
 module.exports = {
-  COOKIE_NAME,
-  parseUsers,
-  signPayload,
-  verifyToken,
+  parseBody,
+  readUserList,
+  matchUser,
   makeCookie,
   clearCookie,
-  getCookie,
+  signSession,
+  verifySession,
+  readSession,
+  COOKIE_NAME
 };
