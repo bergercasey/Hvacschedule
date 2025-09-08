@@ -1,4 +1,4 @@
-const { parseUsers, signPayload, makeCookie } = require('./_authUtil');
+const { parseUsers, signPayload, makeCookie } = require('./_authutil');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
