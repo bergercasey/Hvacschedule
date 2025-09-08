@@ -1,4 +1,4 @@
-const { getCookie, verifyToken } = require('./_authUtil');
+const { getCookie, verifyToken } = require('./_authutil');
 
 exports.handler = async (event) => {
   const token = getCookie(event.headers || {});
