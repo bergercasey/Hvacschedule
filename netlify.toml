@@ -1,0 +1,12 @@
+[build]
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/save-week"
+  to = "/.netlify/functions/save-week"
+  status = 200
+
+[[redirects]]
+  from = "/api/load-week"
+  to = "/.netlify/functions/load-week"
+  status = 200
