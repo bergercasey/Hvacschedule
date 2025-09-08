@@ -1,4 +1,4 @@
-const { clearCookie } = require('./_authUtil');
+const { clearCookie } = require('./_authutil');
 
 exports.handler = async () => {
   return {
