@@ -1,11 +1,31 @@
-const { getCookie, verifyToken } = require('./_authUtil');
+// Loads week JSON from Netlify Blobs ("weeks" store)
 exports.handler = async (event) => {
-  const token = getCookie(event.headers||{});
-  if (!token || !verifyToken(token)) return { statusCode:401, body:'Unauthorized' };
-  const weekKey = (event.queryStringParameters && event.queryStringParameters.weekKey) || '';
-  if (!weekKey) return { statusCode:400, body:'Missing weekKey' };
-  const { getStore } = await import('@netlify/blobs');
-  const store = getStore('weeks');
-  const data = await store.get(weekKey, { type:'json' }) || {};
-  return { statusCode:200, headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ok:true, data }) };
+  try {
+    const qs = event.queryStringParameters || {};
+    const weekKey = qs.weekKey || qs.isoWeek || qs.weekStart;
+    if (!weekKey) return j(400, { ok:false, error:'missing-weekKey' });
+
+    const { getStore } = await import('@netlify/blobs');
+    let store;
+    try {
+      // Use Netlify runtime creds if available
+      store = getStore('weeks');
+    } catch {
+      // Fallback to explicit env vars (names your good repo expected)
+      const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+      const token  = process.env.NETLIFY_API_TOKEN || process.env.BLOBS_TOKEN || process.env.NETLIFY_BLOBS_TOKEN;
+      if (!siteID || !token) return j(500, { ok:false, error:'blobs-not-configured', need:['NETLIFY_SITE_ID','NETLIFY_API_TOKEN'] });
+      store = getStore({ name:'weeks', siteID, token });
+    }
+
+    const json = await store.get(weekKey, { type:'json' });
+    const data = (json && json.data && typeof json.data === 'object') ? json.data : (json || null);
+    return j(200, { ok:true, data });
+  } catch (err) {
+    return j(500, { ok:false, error:String(err) });
+  }
 };
+
+function j(s, o) {
+  return { statusCode:s, headers:{'Content-Type':'application/json'}, body: JSON.stringify(o) };
+}
