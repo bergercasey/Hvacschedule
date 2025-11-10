@@ -190,8 +190,8 @@ function parseKey(key){
 function crewLabel(row){ return `Row ${row}`; }
 
 function normalize(v){
-  if (v === true) return true;
-  if (v === false || v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v;
+  if (v === null || v === undefined) return '';
   return String(v);
 }
 
