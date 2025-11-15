@@ -493,22 +493,18 @@ function appMain(){
   }
 
   function createGrid(){
-    grid.innerHTML = '';
-    for(let row=0; row<ROWS; row++){
-      // Crew Lead / Apprentice (last row: Lead only)
-      const crew = document.createElement('div');
-      crew.className = 'crew-label';
-      crew.setAttribute('data-persistent','1');
+  grid.innerHTML = '';
+  for(let row=0; row<ROWS; row++){
+    // Crew Lead / Apprentice (all rows)
+    const crew = document.createElement('div');
+    crew.className = 'crew-label';
+    crew.setAttribute('data-persistent','1');
 
-      if (row === ROWS - 1) {
-        crew.innerHTML = `<input type="text" class="lead-input" placeholder="Lead">`;
-      } else {
-        crew.innerHTML = `
-          <input type="text" class="lead-input" placeholder="Lead">
-          <input type="text" class="apprentice-input" placeholder="Apprentice">
-        `;
-      }
-      grid.appendChild(crew);
+    crew.innerHTML = `
+      <input type="text" class="lead-input" placeholder="Lead">
+      <input type="text" class="apprentice-input" placeholder="Apprentice">
+    `;
+    grid.appendChild(crew);
 
       // 5 day cells
       for(let col=0; col<5; col++){
